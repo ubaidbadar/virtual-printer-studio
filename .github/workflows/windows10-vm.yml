@@ -33,19 +33,51 @@ jobs:
           echo 'e4ab2e3535be5748252a8d5d57539a6e59be8d6726345ee10e7afd2cb89fefb5  target/win10-vm/windows.iso' | sha256sum -c -
           curl -fL --retry 3 https://github.com/PowerShell/PowerShell/releases/download/v7.4.13/PowerShell-7.4.13-win-x64.zip -o target/win10-vm/pwsh.zip
           unzip -q target/win10-vm/pwsh.zip -d target/win10-vm/pwsh
-      - name: Install Windows 10 and exercise actual inbox PDF printer
-        run: python scripts/qa/windows10-vm.py --work target/win10-vm
+      - name: Start unattended Windows 10 acceptance
+        run: |
+          nohup bash -c 'python -u scripts/qa/windows10-vm.py --work target/win10-vm >target/win10-vm/host-console.log 2>&1; result=$?; echo "$result" >target/win10-vm/host-exit-code' >target/win10-vm/controller.log 2>&1 &
+      - name: Collect initial guest boot progress
+        run: |
+          python - <<'PYTHON'
+          import pathlib,time
+          for _ in range(30):
+              if pathlib.Path('target/win10-vm/host-exit-code').exists(): break
+              time.sleep(10)
+          PYTHON
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-10-boot-progress
+          path: |
+            target/win10-vm/screen.png
+            target/win10-vm/vm-platform.json
+            target/win10-vm/host-console.log
+          if-no-files-found: warn
+      - name: Wait for real Windows guest acceptance
+        run: |
+          python - <<'PYTHON'
+          import pathlib,time
+          result=pathlib.Path('target/win10-vm/host-exit-code')
+          for minute in range(105):
+              if result.exists(): break
+              print(f'Waiting for guest acceptance: minute {minute+1}',flush=True)
+              time.sleep(60)
+          else: raise SystemExit('Guest controller did not finish')
+          print(pathlib.Path('target/win10-vm/host-console.log').read_text())
+          raise SystemExit(int(result.read_text()))
+          PYTHON
       - name: Extract guest evidence
         if: always()
         run: |
           mkdir -p target/win10-evidence
-          cp target/win10-vm/vm-platform.json target/win10-vm/qemu.log target/win10-vm/screen.png target/win10-evidence/ || true
+          cp target/win10-vm/vm-platform.json target/win10-vm/qemu.log target/win10-vm/screen.png target/win10-vm/host-console.log target/win10-evidence/ || true
           if [ -f target/win10-vm/evidence.zip ]; then unzip -q target/win10-vm/evidence.zip -d target/win10-evidence; fi
       - name: Check guest acceptance result
         run: python -c "import json; r=json.load(open('target/win10-evidence/result.json',encoding='utf-8-sig')); print(r); assert r['exit_code']==0"
       - run: pip install -r scripts/qa/requirements.txt
       - name: Independently verify generated PDF contents
         run: python scripts/qa/verify-pdfs.py target/win10-evidence/printing --expected-count 10
+      - name: Independently verify the live GUI test PDF
+        run: python scripts/qa/verify-pdfs.py target/win10-evidence/live-ui/PDFs --expected-count 1 --marker "Your virtual printer is working."
       - name: Measure reference pixel differences
         run: python scripts/qa/compare-visuals.py --actual target/win10-evidence/visuals --output target/win10-evidence/comparison
       - uses: actions/upload-artifact@v4

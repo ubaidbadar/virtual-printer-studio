@@ -1,6 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$App,[Parameter(Mandatory=$true)][string]$OutputDirectory)
 $ErrorActionPreference='Stop'
-if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'This acceptance script requires a disposable GitHub Actions Windows desktop.'}
+if(($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') -and $env:VPS_DISPOSABLE_TEST_VM -ne '1'){throw 'This acceptance script requires a disposable GitHub Actions Windows desktop.'}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $data=Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'VirtualPrinterStudio\VirtualPrinterStudio\data'

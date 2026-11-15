@@ -42,6 +42,11 @@ try {
     $process=Start-Process -FilePath C:\vps\app\virtual-printer-studio.exe -ArgumentList @('--ui-snapshot',"$evidence\visuals") -PassThru -RedirectStandardError "$evidence\visuals.log"
     if(!$process.WaitForExit(120000)){ $process.Kill(); throw 'Snapshot timed out' }
     if($process.ExitCode -ne 0){throw 'UI snapshot failed'}
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\vps\scripts\qa\ui-automation.ps1 -App C:\vps\app\virtual-printer-studio.exe -OutputDirectory "$evidence\ui-automation" *> "$evidence\ui-automation.log"
+    if($LASTEXITCODE -ne 0){throw 'Native UI Automation failed'}
+    $env:VPS_DISPOSABLE_TEST_VM='1'
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\vps\scripts\qa\live-ui.ps1 -App C:\vps\app\virtual-printer-studio.exe -OutputDirectory "$evidence\live-ui" *> "$evidence\live-ui.log"
+    if($LASTEXITCODE -ne 0){throw 'Live GUI acceptance failed'}
 } catch {
     $_|Out-String|Set-Content "$evidence\failure.txt"
     $code=1
