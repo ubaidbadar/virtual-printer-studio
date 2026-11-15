@@ -3,6 +3,8 @@ import argparse
 import http.server
 import json
 import secrets
+import socket
+from PIL import Image
 import shutil
 import subprocess
 import threading
@@ -36,6 +38,7 @@ try {
     & C:\vps\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File C:\vps\scripts\windows-smoke.ps1 -App C:\vps\app\virtual-printer-studio.exe -TestRoot "$evidence\printing" *> "$evidence\printing.log"
     if($LASTEXITCODE -ne 0){throw 'Real printer test failed'}
     $env:SLINT_BACKEND='winit-software'
+    $env:SLINT_SCALE_FACTOR='1'
     $process=Start-Process -FilePath C:\vps\app\virtual-printer-studio.exe -ArgumentList @('--ui-snapshot',"$evidence\visuals") -PassThru -RedirectStandardError "$evidence\visuals.log"
     if(!$process.WaitForExit(120000)){ $process.Kill(); throw 'Snapshot timed out' }
     if($process.ExitCode -ne 0){throw 'UI snapshot failed'}
@@ -91,6 +94,15 @@ try:
     for minute in range(100):
         if (w/'evidence.zip').exists():break
         if proc.poll() is not None:raise RuntimeError('VM exited before sending evidence')
+        try:
+            with socket.socket(socket.AF_UNIX) as monitor:
+                monitor.connect(str(w/'monitor.sock'))
+                monitor.recv(4096)
+                monitor.sendall(f'screendump {w}/screen.ppm\n'.encode())
+                time.sleep(1)
+                Image.open(w/'screen.ppm').save(w/'screen.png')
+        except (OSError, ValueError):
+            pass
         print(f'VM acceptance minute {minute+1}; waiting for Windows guest evidence',flush=True)
         time.sleep(60)
     else:raise TimeoutError('Windows VM did not finish within 100 minutes')

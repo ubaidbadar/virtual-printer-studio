@@ -40,12 +40,15 @@ jobs:
         shell: pwsh
         run: |
           $env:SLINT_BACKEND='winit-software'
+          $env:SLINT_SCALE_FACTOR='1'
           & target/qa-package/virtual-printer-studio.exe --ui-snapshot target/client-evidence/visuals
           if ($LASTEXITCODE -ne 0) { throw 'UI snapshot export failed.' }
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - run: python -m pip install -r scripts/qa/requirements.txt
+      - name: Independently verify generated PDF contents
+        run: python scripts/qa/verify-pdfs.py target/client-evidence/printing
       - name: Measure supplied design differences
         run: python scripts/qa/compare-visuals.py --actual target/client-evidence/visuals --output target/client-evidence/comparison
       - uses: actions/upload-artifact@v4
