@@ -5,7 +5,7 @@ use crate::{JobMetadata, valid_id};
 use anyhow::{Context, Result, bail, ensure};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     fs::{self, File},
     io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
@@ -29,7 +29,7 @@ impl CaptureServer {
     pub fn start(
         address: SocketAddr,
         root: PathBuf,
-        profiles: Arc<RwLock<HashSet<String>>>,
+        profiles: Arc<RwLock<HashMap<String, String>>>,
         authorize: Authorize,
         event: Event,
     ) -> Result<Self> {
@@ -123,30 +123,38 @@ fn ack(reader: &mut BufReader<TcpStream>) -> Result<()> {
 fn receive(
     stream: TcpStream,
     root: &Path,
-    profiles: &RwLock<HashSet<String>>,
+    profiles: &RwLock<HashMap<String, String>>,
 ) -> Result<Option<JobMetadata>> {
     stream.set_read_timeout(Some(Duration::from_secs(120)))?;
     stream.set_write_timeout(Some(Duration::from_secs(120)))?;
     let mut reader = BufReader::new(stream);
     let first = line(&mut reader)?;
-    ensure!(
-        first.first() == Some(&2),
-        "Only LPR receive-job requests are accepted"
-    );
-    let queue = std::str::from_utf8(&first[1..])?;
-    let id = queue.strip_prefix("VPS_").context("Unknown LPR queue")?;
-    ensure!(
-        valid_id(id)
-            && profiles
-                .read()
-                .map_err(|_| anyhow::anyhow!("Capture profile lock failed"))?
-                .contains(id),
-        "This printer does not belong to this application instance"
-    );
+    ensure!(!first.is_empty(), "Empty LPR request");
+    let text = std::str::from_utf8(&first[1..])?;
+    let queue = text
+        .split_whitespace()
+        .next()
+        .context("Missing LPR queue")?;
+    let id = profiles
+        .read()
+        .map_err(|_| anyhow::anyhow!("Capture profile lock failed"))?
+        .get(queue)
+        .cloned()
+        .context("This printer does not belong to this application instance")?;
+    ensure!(valid_id(&id), "Invalid capture profile");
+    if first[0] == 3 || first[0] == 4 {
+        reader.get_mut().write_all(b"no entries\n")?;
+        return Ok(None);
+    }
+    if first[0] == 1 {
+        ack(&mut reader)?;
+        return Ok(None);
+    }
+    ensure!(first[0] == 2, "Only LPR receive-job requests are accepted");
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-    let folder = root.join("jobs").join(id);
+    let folder = root.join("jobs").join(&id);
     fs::create_dir_all(&folder)?;
-    fs::create_dir_all(root.join("acks").join(id))?;
+    fs::create_dir_all(root.join("acks").join(&id))?;
     let partial = folder.join(format!(
         "capture-{}-{}.partial",
         now.as_nanos(),
@@ -244,14 +252,14 @@ fn receive(
                     .collect();
                 let job = JobMetadata {
                     id: job_id.clone(),
-                    printer_id: id.into(),
+                    printer_id: id.clone(),
                     title,
                     created_unix: now.as_secs() as i64,
                 };
                 let ready = folder.join(format!("{job_id}.ready"));
                 let already = root
                     .join("acks")
-                    .join(id)
+                    .join(&id)
                     .join(format!("{job_id}.ack"))
                     .is_file()
                     || ready.is_dir();
@@ -299,7 +307,7 @@ mod tests {
             stream.read_exact(&mut ack).expect("ACK");
             assert_eq!(ack, [0]);
         };
-        stream.write_all(b"\x02VPS_profile1\n").expect("request");
+        stream.write_all(b"\x02profile1\n").expect("request");
         read_ack(&mut stream);
         let control = b"Hlocalhost\nPowner\nJInvoice from Word\nNInvoice.pdf\n";
         let pdf = b"%PDF-1.4\nexample\n%%EOF\n";
@@ -321,7 +329,10 @@ mod tests {
     #[test]
     fn framing_job_names_and_transport_retry_are_correct() {
         let dir = tempfile::tempdir().expect("folder");
-        let profiles = Arc::new(RwLock::new(HashSet::from(["profile1".into()])));
+        let profiles = Arc::new(RwLock::new(HashMap::from([(
+            "profile1".into(),
+            "profile1".into(),
+        )])));
         let (tx, rx) = mpsc::channel();
         let server = CaptureServer::start(
             "127.0.0.1:0".parse().expect("address"),
@@ -364,7 +375,7 @@ mod tests {
             CaptureServer::start(
                 "0.0.0.0:0".parse().expect("address"),
                 dir.path().into(),
-                Arc::new(RwLock::new(HashSet::new())),
+                Arc::new(RwLock::new(HashMap::new())),
                 Arc::new(|_| Ok(())),
                 Arc::new(|_| {})
             )

@@ -2,7 +2,7 @@
 import socket, threading, subprocess, pathlib, uuid, time, json
 root=pathlib.Path('target/lpr-probe').resolve();root.mkdir(parents=True,exist_ok=True)
 name='VPS LPR '+str(uuid.uuid4())[:8]; queue='VPS_'+uuid.uuid4().hex[:24];jobs=[];errors=[]
-listener=socket.socket();listener.bind(('127.0.0.1',515));listener.listen(8);listener.settimeout(90)
+listener=socket.socket();listener.bind(('127.0.0.1',15151));listener.listen(8);listener.settimeout(90)
 def read_line(stream):
  line=stream.readline(4096)
  if not line.endswith(b'\n'): raise ValueError('missing command line')
@@ -25,9 +25,16 @@ def receive():
 thread=threading.Thread(target=receive,daemon=True);thread.start()
 script=r'''$ErrorActionPreference='Stop'
 Start-Service Spooler
+Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;
+public class ProbePort {
+ [DllImport("winspool.drv",EntryPoint="DeletePortW",CharSet=CharSet.Unicode,SetLastError=true)]private static extern bool DeletePort(string server,IntPtr window,string name);
+ public static bool Remove(string name){return DeletePort(null,IntPtr.Zero,name);}
+}
+'@
 $port='__QUEUE__';$name='__NAME__'
 try {
- New-CimInstance -ClassName Win32_TCPIPPrinterPort -Property @{Name=$port;Protocol=[uint32]2;HostAddress='127.0.0.1';PortNumber=[uint32]515;Queue=$port;ByteCount=$true;SNMPEnabled=$false} | Out-Null
+ New-CimInstance -ClassName Win32_TCPIPPrinterPort -Property @{Name=$port;Protocol=[uint32]2;HostAddress='127.0.0.1';PortNumber=[uint32]15151;Queue=$port;ByteCount=$true;SNMPEnabled=$false} | Out-Null
  Add-Printer -Name $name -DriverName 'Microsoft Print To PDF' -PortName $port
  Write-Output 'Installed PDF printer with built-in LPR port.'
  Add-Type -AssemblyName System.Drawing
@@ -42,14 +49,17 @@ try {
 }finally{
  Get-PrintJob -PrinterName $name -ErrorAction SilentlyContinue | Remove-PrintJob -ErrorAction SilentlyContinue
  if(Get-Printer -Name $name -ErrorAction SilentlyContinue){Remove-Printer -Name $name}
- if(Get-PrinterPort -Name $port -ErrorAction SilentlyContinue){Remove-PrinterPort -Name $port}
+ for($i=0;$i -lt 20;$i++){if([ProbePort]::Remove($port)){Write-Output 'Removed LPR port.';break};Start-Sleep -Milliseconds 200}
+ if($i -eq 20){throw 'Could not remove the LPR port.'}
 }'''.replace('__QUEUE__',queue).replace('__NAME__',name)
 file=root/'print.ps1';file.write_text(script,encoding='utf-8')
 result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(file)],timeout=110)
 thread.join(timeout=2);listener.close()
-if result.returncode or not jobs:raise SystemExit(f'LPR probe failed: exit={result.returncode} errors={errors}')
+if not jobs:raise SystemExit(f'LPR probe failed: exit={result.returncode} errors={errors}')
 control=jobs[0].get(2,b'');data=jobs[0].get(3,b'')
 (root/'control.txt').write_bytes(control);(root/'document.pdf').write_bytes(data)
 print('CONTROL',control.decode(errors='replace'),flush=True)
 if not data.startswith(b'%PDF-'):raise SystemExit(f'Not PDF: {data[:100]!r}')
 print('PASS: Microsoft Print to PDF captured over built-in LPR.',len(data),'bytes',flush=True)
+
+if result.returncode:raise SystemExit(f'Cleanup failed: exit={result.returncode}')
