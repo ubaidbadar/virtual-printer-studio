@@ -12,6 +12,14 @@ using System.Runtime.InteropServices;
 public class VpsSpooler {
  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct MonitorInfo { public string Name; public string Environment; public string Dll; }
  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct PortInfo { public string Name; }
+ [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct PrinterInfo {
+  public string Server; public string Printer; public string Share; public string Port; public string Driver; public string Comment; public string Location;
+  public IntPtr DevMode; public string Separator; public string Processor; public string DataType; public string Parameters; public IntPtr Security;
+  public uint Attributes; public uint Priority; public uint DefaultPriority; public uint StartTime; public uint UntilTime; public uint Status; public uint Jobs; public uint AveragePPM;
+ }
+ [DllImport("winspool.drv", EntryPoint="AddPrinterW", CharSet=CharSet.Unicode, SetLastError=true)] private static extern IntPtr AddPrinter(string server,uint level,ref PrinterInfo info);
+ public static IntPtr CreatePrinter(ref PrinterInfo info) { return AddPrinter(null,2,ref info); }
+
  [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] private static extern bool AddMonitor(string server, uint level, ref MonitorInfo info);
  [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] private static extern bool AddPortEx(string server, uint level, ref PortInfo info, string monitor);
  public static bool InstallMonitor(ref MonitorInfo info) { return AddMonitor(null,2,ref info); }
@@ -106,7 +114,17 @@ public class VpsSpooler {
             $collision = Get-Printer -Name $r.name -ErrorAction SilentlyContinue
             if ($collision -and $collision.PortName -ne $port) { throw 'Another Windows printer already uses this name. Choose another printer name.' }
             $stage = 'Creating the Windows printer'
-            if (!$printer) { Add-Printer -Name $r.name -DriverName 'Microsoft Print To PDF' -PortName $port -ErrorAction Stop }
+            Write-Output ("Creating printer name=[" + $r.name + "] port=[" + $port + "]")
+            Get-PrinterPort -Name $port | Format-List Name,Description,PortMonitor | Out-String | Write-Output
+            if (!$printer) {
+                $info = New-Object VpsSpooler+PrinterInfo
+                $info.Printer = $r.name; $info.Port = $port; $info.Driver = 'Microsoft Print To PDF'
+                $info.Comment = 'Virtual Printer Studio'; $info.Processor = 'winprint'; $info.DataType = 'RAW'
+                $info.Attributes = 64; $info.Priority = 1; $info.DefaultPriority = 1
+                $handle = [VpsSpooler]::CreatePrinter([ref]$info)
+                if ($handle -eq [IntPtr]::Zero) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) }
+                [VpsSpooler]::ClosePrinter($handle) | Out-Null
+            }
             elseif ($printer.Name -ne $r.name) { Rename-Printer -Name $printer.Name -NewName $r.name -ErrorAction Stop }
             $printer = Get-Printer -Name $r.name -ErrorAction Stop
         }
@@ -123,7 +141,9 @@ public class VpsSpooler {
     @{ok=$true; error=''} | ConvertTo-Json -Compress | Set-Content -LiteralPath $r.result -Encoding UTF8
     exit 0
 } catch {
+    $failure = $_
+    Write-Output ($failure | Format-List * -Force | Out-String)
     Write-Output ("Setup failed at ${stage}: " + $_.Exception.Message + "`n" + $_.ScriptStackTrace)
-    if ($r -and $r.result) { @{ok=$false; error=("${stage}: " + $_.Exception.Message)} | ConvertTo-Json -Compress | Set-Content -LiteralPath $r.result -Encoding UTF8 }
+    if ($r -and $r.result) { @{ok=$false; error=("${stage}: " + $failure.Exception.Message)} | ConvertTo-Json -Compress | Set-Content -LiteralPath $r.result -Encoding UTF8 }
     exit 1
 }
