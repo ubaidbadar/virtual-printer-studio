@@ -70,7 +70,13 @@ jobs:
         run: |
           mkdir -p target/win10-evidence
           cp target/win10-vm/vm-platform.json target/win10-vm/qemu.log target/win10-vm/screen.png target/win10-vm/host-console.log target/win10-evidence/ || true
-          if [ -f target/win10-vm/evidence.zip ]; then unzip -q target/win10-vm/evidence.zip -d target/win10-evidence; fi
+          if [ -f target/win10-vm/evidence.zip ]; then python scripts/qa/extract-evidence.py target/win10-vm/evidence.zip target/win10-evidence; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-10-raw-evidence
+          path: target/win10-vm/evidence.zip
+          if-no-files-found: warn
       - name: Check guest acceptance result
         run: python -c "import json; r=json.load(open('target/win10-evidence/result.json',encoding='utf-8-sig')); print(r); assert r['exit_code']==0"
       - run: pip install -r scripts/qa/requirements.txt

@@ -15,7 +15,7 @@ function Save-VpsUiDiagnostics($Root,[string]$Directory,[string]$Name='window') 
             try {
                 $graphics.CopyFromScreen($visible.Location,[Drawing.Point]::Empty,$visible.Size)
                 $bitmap.Save((Join-Path $Directory "$Name.png"),[Drawing.Imaging.ImageFormat]::Png)
-                @{window=@{x=$bounds.X;y=$bounds.Y;width=$bounds.Width;height=$bounds.Height};visible=@{x=$visible.X;y=$visible.Y;width=$visible.Width;height=$visible.Height};note='Actual visible native window, including OS frame; no resizing.'}|ConvertTo-Json -Depth 4|Set-Content (Join-Path $Directory "$Name-bounds.json") -Encoding UTF8
+                @{window=@{x=$bounds.X;y=$bounds.Y;width=$bounds.Width;height=$bounds.Height};visible=@{x=$visible.X;y=$visible.Y;width=$visible.Width;height=$visible.Height};note='Screen pixels at the application bounds, including any overlapping OS windows; no resizing.'}|ConvertTo-Json -Depth 4|Set-Content (Join-Path $Directory "$Name-bounds.json") -Encoding UTF8
             } finally {$graphics.Dispose();$bitmap.Dispose()}
         }
     } catch {Write-Host ('Optional UI diagnostic capture: '+$_.Exception.Message)}
