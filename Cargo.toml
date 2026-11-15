@@ -39,4 +39,4 @@ windows-sys = { version = "0.61.2", features = ["Win32_System_Registry", "Win32_
 [target.'cfg(windows)'.dependencies.slint]
 version = "1.18.1"
 default-features = false
-features = ["system-tray"]
+features = ["system-tray", "accessibility"]

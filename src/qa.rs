@@ -44,7 +44,17 @@ pub fn snapshots(output: &Path) -> anyhow::Result<()> {
     )));
     let error = Rc::new(RefCell::new(None));
     ui.show()?;
-    scene(ui.as_weak(), output.to_owned(), 0, error.clone());
+    let delay = std::env::var("VPS_QA_HOLD_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0)
+        .min(60);
+    let weak = ui.as_weak();
+    let directory = output.to_owned();
+    let failures = error.clone();
+    slint::Timer::single_shot(Duration::from_secs(delay), move || {
+        scene(weak, directory, 0, failures)
+    });
     slint::run_event_loop()?;
     if let Some(e) = error.borrow_mut().take() {
         return Err(e);

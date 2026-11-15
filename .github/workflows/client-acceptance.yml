@@ -55,6 +55,11 @@ jobs:
             if (!$process.WaitForExit(120000)) { $process.Kill(); throw "DPI $scale timed out." }
             if ($process.ExitCode -ne 0) { Get-Content "$directory.log"; throw "DPI $scale capture failed." }
           }
+      - name: Operate real Windows accessibility controls
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/qa/ui-automation.ps1 -App target/qa-package/virtual-printer-studio.exe -OutputDirectory target/client-evidence/ui-automation
+          if ($LASTEXITCODE -ne 0) { throw 'Native UI Automation failed.' }
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
