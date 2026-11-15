@@ -64,7 +64,7 @@ jobs:
         if: inputs.machine == 'windows-11-arm-x64-emulated'
         shell: pwsh
         run: |
-          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/qa/live-ui.ps1 -App target/qa-package/virtual-printer-studio.exe -OutputDirectory target/client-evidence/live-ui
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/qa/live-ui.ps1 -App target/qa-package/virtual-printer-studio.exe -OutputDirectory target/client-evidence/live-ui -TestBackground
           if ($LASTEXITCODE -ne 0) { throw 'Live GUI acceptance failed.' }
       - uses: actions/setup-python@v6
         with:
@@ -76,7 +76,7 @@ jobs:
         run: python scripts/qa/verify-pdfs.py target/client-evidence/printing --expected-count 10
       - name: Independently verify the GUI-generated test PDF
         if: inputs.machine == 'windows-11-arm-x64-emulated'
-        run: python scripts/qa/verify-pdfs.py target/client-evidence/live-ui/PDFs --expected-count 1 --marker "Your virtual printer is working."
+        run: python scripts/qa/verify-pdfs.py target/client-evidence/live-ui/PDFs --expected-count 2 --marker "Your virtual printer is working."
       - name: Measure supplied design differences
         run: python scripts/qa/compare-visuals.py --actual target/client-evidence/visuals --output target/client-evidence/comparison
       - uses: actions/upload-artifact@v4
