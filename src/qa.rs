@@ -53,7 +53,7 @@ pub fn snapshots(output: &Path) -> anyhow::Result<()> {
     let directory = output.to_owned();
     let failures = error.clone();
     slint::Timer::single_shot(Duration::from_secs(delay), move || {
-        scene(weak, directory, 0, failures)
+        scene(weak, directory, 0, failures, 0)
     });
     slint::run_event_loop()?;
     if let Some(e) = error.borrow_mut().take() {
@@ -75,6 +75,7 @@ fn scene(
     output: PathBuf,
     index: usize,
     error: Rc<RefCell<Option<anyhow::Error>>>,
+    resize_attempt: u8,
 ) {
     let names = [
         "01-printers",
@@ -119,11 +120,24 @@ fn scene(
     ));
     ui.window().request_redraw();
     slint::Timer::single_shot(Duration::from_millis(500), move || {
-        let result = (|| -> anyhow::Result<()> {
+        let result = (|| -> anyhow::Result<bool> {
             let ui = weak
                 .upgrade()
                 .ok_or_else(|| anyhow::anyhow!("Window closed during capture"))?;
             let buffer = ui.window().take_snapshot()?;
+            let expected = (
+                (1280.0 * scale).round() as u32,
+                (height * scale).round() as u32,
+            );
+            if (buffer.width(), buffer.height()) != expected {
+                anyhow::ensure!(
+                    resize_attempt < 5,
+                    "Native window did not reach requested client size: {:?}, expected {:?}",
+                    (buffer.width(), buffer.height()),
+                    expected
+                );
+                return Ok(false);
+            }
             let file = std::fs::File::create(output.join(format!("{}.png", names[index])))?;
             let mut encoder = png::Encoder::new(file, buffer.width(), buffer.height());
             encoder.set_color(png::ColorType::Rgba);
@@ -131,13 +145,15 @@ fn scene(
             encoder
                 .write_header()?
                 .write_image_data(buffer.as_bytes())?;
-            Ok(())
+            Ok(true)
         })();
-        if let Err(e) = result {
-            *error.borrow_mut() = Some(e);
-            let _ = slint::quit_event_loop();
-        } else {
-            scene(weak, output, index + 1, error);
+        match result {
+            Err(e) => {
+                *error.borrow_mut() = Some(e);
+                let _ = slint::quit_event_loop();
+            }
+            Ok(true) => scene(weak, output, index + 1, error, 0),
+            Ok(false) => scene(weak, output, index, error, resize_attempt + 1),
         }
     });
 }
