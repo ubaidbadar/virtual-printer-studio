@@ -24,6 +24,19 @@ public class VpsSpooler {
  [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] private static extern bool AddPortEx(string server, uint level, ref PortInfo info, string monitor);
  public static bool InstallMonitor(ref MonitorInfo info) { return AddMonitor(null,2,ref info); }
  public static bool InstallPort(ref PortInfo info, string monitor) { return AddPortEx(null,1,ref info,monitor); }
+
+ [DllImport("winspool.drv", EntryPoint="EnumPortsW", CharSet=CharSet.Unicode, SetLastError=true)] private static extern bool EnumPorts(string server,uint level,IntPtr ports,uint size,out uint needed,out uint returned);
+ [DllImport("winspool.drv", EntryPoint="DeletePortW", CharSet=CharSet.Unicode, SetLastError=true)] private static extern bool DeletePort(string server,IntPtr window,string name);
+ public static bool RemovePort(string name) { return DeletePort(null,IntPtr.Zero,name); }
+ public static bool PortExists(string name) {
+  uint needed,count; EnumPorts(null,1,IntPtr.Zero,0,out needed,out count);
+  if(needed==0) return false;
+  IntPtr buffer=Marshal.AllocHGlobal((int)needed);
+  try { if(!EnumPorts(null,1,buffer,needed,out needed,out count)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+   for(int i=0;i<count;i++) if(String.Equals(Marshal.PtrToStringUni(Marshal.ReadIntPtr(buffer,i*IntPtr.Size)),name,StringComparison.OrdinalIgnoreCase)) return true;
+   return false;
+  } finally { Marshal.FreeHGlobal(buffer); }
+ }
  [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool OpenPrinter(string name, out IntPtr printer, IntPtr defaults);
  [DllImport("winspool.drv", SetLastError=true)] public static extern bool SetPrinter(IntPtr printer, uint level, IntPtr info, uint command);
  [DllImport("winspool.drv")] public static extern bool ClosePrinter(IntPtr printer);
@@ -80,7 +93,7 @@ public class VpsSpooler {
             }
         }
         if ($printer) { Remove-Printer -Name $printer.Name -ErrorAction Stop }
-        if (Get-PrinterPort -Name $port -ErrorAction SilentlyContinue) { Remove-PrinterPort -Name $port -ErrorAction Stop }
+        if ([VpsSpooler]::PortExists($port)) { if (![VpsSpooler]::RemovePort($port)) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) } }
         # Captured files are kept for recovery; successful jobs are acknowledged.
         # Retain ownership metadata so a failed desktop-state commit can be repaired safely.
     } else {
@@ -106,7 +119,7 @@ public class VpsSpooler {
                 Add-PrinterDriver -Name 'Microsoft Print To PDF' -ErrorAction Stop
             }
             $stage = 'Registering the capture port'
-            if (!(Get-PrinterPort -Name $port -ErrorAction SilentlyContinue)) {
+            if (![VpsSpooler]::PortExists($port)) {
                 $info = New-Object VpsSpooler+PortInfo; $info.Name = $port
                 if (![VpsSpooler]::InstallPort([ref]$info, $monitor)) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) }
             }
@@ -115,7 +128,7 @@ public class VpsSpooler {
             if ($collision -and $collision.PortName -ne $port) { throw 'Another Windows printer already uses this name. Choose another printer name.' }
             $stage = 'Creating the Windows printer'
             Write-Output ("Creating printer name=[" + $r.name + "] port=[" + $port + "]")
-            Get-PrinterPort -Name $port | Format-List Name,Description,PortMonitor | Out-String | Write-Output
+            Write-Output ('Capture port registered: ' + [VpsSpooler]::PortExists($port))
             if (!$printer) {
                 $info = New-Object VpsSpooler+PrinterInfo
                 $info.Printer = $r.name; $info.Port = $port; $info.Driver = 'Microsoft Print To PDF'
