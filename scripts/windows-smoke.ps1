@@ -75,10 +75,11 @@ $doc.DocumentName=$r.title
 Write-Output ('Submitting document ['+$doc.DocumentName+']')
 $script:pageIndex=0
 $script:pageCount=[int]$r.pages
+$script:documentTitle=[string]$r.title
 $doc.add_PrintPage({param($sender,$e)
  $script:pageIndex++
  $font=New-Object Drawing.Font('Arial',16)
- try{$e.Graphics.DrawString('Virtual Printer Studio integration test',$font,[Drawing.Brushes]::Black,72,72)}finally{$font.Dispose()}
+ try{$e.Graphics.DrawString('Virtual Printer Studio integration test',$font,[Drawing.Brushes]::Black,72,72);$e.Graphics.DrawString($script:documentTitle,$font,[Drawing.Brushes]::Black,72,130)}finally{$font.Dispose()}
  $e.HasMorePages=$script:pageIndex -lt $script:pageCount
 })
 try{$doc.Print()}finally{$doc.Dispose()}

@@ -21,6 +21,8 @@ for path in files:
         assert a.marker in printed_page.extract_text(), f'{path}: missing page text'
     page = reader.pages[0]
     text = page.extract_text()
+    if path.name.startswith('Unicode '):
+        assert 'Unicode café Ω invoice' in text, f'{path}: Unicode page text was not preserved'
     assert a.marker in text, f'{path}: missing printed text: {text!r}'
     assert float(page.mediabox.width) > 0 and float(page.mediabox.height) > 0
     results.append(dict(file=str(path.relative_to(a.root)), pages=len(reader.pages),
