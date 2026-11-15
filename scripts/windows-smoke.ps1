@@ -55,19 +55,33 @@ function Configure([string]$action,[bool]$enabled=$true) {
     $reply = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
     if (!$reply.ok) { throw "Native action ${action}: $($reply.error)" }
 }
-function Print-Document([string]$title) {
-    Add-Type -AssemblyName System.Drawing
-    $doc = New-Object Drawing.Printing.PrintDocument
-    $doc.PrinterSettings.PrinterName = $name
-    $doc.PrintController = New-Object Drawing.Printing.StandardPrintController
-    $doc.DocumentName = $title
-    if (!$doc.PrinterSettings.IsValid) { throw 'Temporary printer was not registered.' }
-    $doc.add_PrintPage({param($sender,$e)
-        $font = New-Object Drawing.Font('Arial',16)
-        try { $e.Graphics.DrawString('Virtual Printer Studio integration test',$font,[Drawing.Brushes]::Black,72,72) } finally { $font.Dispose() }
-        $e.HasMorePages = $false
-    })
-    try { $doc.Print() } finally { $doc.Dispose() }
+function Print-Document {
+    param([Parameter(Mandatory=$true)][string]$DocumentTitle)
+    # Use the same .NET Framework GDI path as the app's native test page. The
+    # host PowerShell runtime must not substitute PrintDocument's default title.
+    $payload=@{printer=$name;title=$DocumentTitle}|ConvertTo-Json -Compress
+    $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+    $script=@'
+$ErrorActionPreference='Stop'
+$r=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PRINT__'))|ConvertFrom-Json
+Add-Type -AssemblyName System.Drawing
+$doc=New-Object Drawing.Printing.PrintDocument
+$doc.PrinterSettings.PrinterName=$r.printer
+if(!$doc.PrinterSettings.IsValid){throw 'Temporary printer was not registered.'}
+$doc.PrintController=New-Object Drawing.Printing.StandardPrintController
+$doc.DocumentName=$r.title
+Write-Output ('Submitting document ['+$doc.DocumentName+']')
+$doc.add_PrintPage({param($sender,$e)
+ $font=New-Object Drawing.Font('Arial',16)
+ try{$e.Graphics.DrawString('Virtual Printer Studio integration test',$font,[Drawing.Brushes]::Black,72,72)}finally{$font.Dispose()}
+ $e.HasMorePages=$false
+})
+try{$doc.Print()}finally{$doc.Dispose()}
+'@
+    $file=Join-Path $TestRoot ('print-'+[guid]::NewGuid().ToString()+'.ps1')
+    Set-Content -LiteralPath $file -Value $script.Replace('__PRINT__',$encoded) -Encoding utf8NoBOM
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $file
+    if($LASTEXITCODE -ne 0){throw "GDI printing failed for $DocumentTitle"}
 }
 function Wait-Saved([int]$count) {
     $deadline = (Get-Date).AddSeconds(90)
@@ -89,8 +103,8 @@ try {
     Write-Host 'Installed PDF printer using the inbox Standard TCP/IP LPR monitor.'
     # An ordinary local process must be unable to inject a print into the receiver.
     $client=New-Object Net.Sockets.TcpClient('127.0.0.1',[int](Read-State).capture_port)
-    try { $stream=$client.GetStream();$bytes=[Text.Encoding]::ASCII.GetBytes(([char]2)+$queue+"`n");$stream.Write($bytes,0,$bytes.Length);$stream.ReadTimeout=3000;try{$answer=$stream.ReadByte()}catch{$answer=-1};if($answer -eq 0){throw 'The receiver accepted a non-spooler connection.'} } finally {$client.Dispose()}
-    foreach ($title in @('Invoice A','Invoice B','Invoice C')) { Print-Document $title }
+    try { $stream=$client.GetStream();$bytes=[Text.Encoding]::ASCII.GetBytes(([char]2)+$queue+"`n");$stream.ReadTimeout=3000;try{$stream.Write($bytes,0,$bytes.Length);$answer=$stream.ReadByte()}catch{$answer=-1};if($answer -eq 0){throw 'The receiver accepted a non-spooler connection.'} } finally {$client.Dispose()}
+    foreach ($label in @('Invoice A','Invoice B','Invoice C')) { Print-Document -DocumentTitle $label }
     Wait-Saved 3
     $files=@(Get-ChildItem -LiteralPath $output -Filter '*.pdf')
     if ($files.Count -ne 3) { throw 'Expected three distinct output PDFs.' }
