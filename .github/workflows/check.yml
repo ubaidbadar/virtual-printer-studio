@@ -1,8 +1,9 @@
 name: Desktop checks
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 jobs:
   check:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -14,12 +15,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - run: cargo fmt --check
-      - run: cargo test --locked
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo build --release --locked
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --locked --all-targets -- -D warnings
+      - run: cargo build --workspace --release --locked
+      - name: Package Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path target/package -Force
+          Copy-Item target/release/virtual-printer-studio.exe,target/release/vps_port_monitor.dll,scripts/install.ps1,README.md -Destination target/package
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
           name: virtual-printer-studio-windows
-          path: target/release/virtual-printer-studio.exe
+          path: target/package/
+      - name: Native Windows print integration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/windows-smoke.ps1 -App target/release/virtual-printer-studio.exe -Monitor target/release/vps_port_monitor.dll -TestRoot target/windows-smoke
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows'
+        with:
+          name: windows-integration-evidence
+          path: target/windows-smoke/
+          if-no-files-found: ignore

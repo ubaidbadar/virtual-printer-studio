@@ -3,6 +3,7 @@ import { Tokens } from "../theme/tokens.slint";
 export struct PrinterView { id: string, name: string, folder: string, status: string, enabled: bool, count: int }
 export component PrinterCard inherits Rectangle {
     in property <PrinterView> printer;
+    in property <bool> busy;
     callback details(); callback toggle(bool); callback test();
     min-height: 166px;
     background: Tokens.surface; border-color: Tokens.border; border-width: 1px; border-radius: Tokens.radius;
@@ -18,9 +19,9 @@ export component PrinterCard inherits Rectangle {
         Text { text: @tr("{} PDFs saved", root.printer.count); color: Tokens.secondary; }
         HorizontalLayout {
             spacing: 10px;
-            Button { text: @tr("Details"); clicked => { root.details(); } }
-            Button { text: @tr("Test PDF"); clicked => { root.test(); } }
-            Switch { checked: root.printer.enabled; accessible-label: @tr("Enable printer"); toggled => { root.toggle(self.checked); } }
+            Button { enabled: !root.busy; text: @tr("Details"); clicked => { root.details(); } }
+            Button { enabled: !root.busy; text: @tr("Test PDF"); clicked => { root.test(); } }
+            Switch { enabled: !root.busy; checked: root.printer.enabled; accessible-label: @tr("Enable printer"); toggled => { root.toggle(self.checked); } }
         }
     }
 }

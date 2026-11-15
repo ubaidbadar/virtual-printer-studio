@@ -1,18 +1,21 @@
 # Validation and release limitations
 
-Checked in a Linux build environment on 2026-11-15 using Rust stable 1.100.0 and Slint 1.18.1.
+Version 0.2 includes the Windows printer implementation; the earlier 0.1 restriction to test PDFs no longer describes the source.
 
-- `cargo test --locked`: five tests pass (validation, collision-safe PDF output, PDF offsets, persistence and backup recovery, UI pages/search/callbacks).
-- `cargo fmt --check`: passes.
-- `cargo clippy --locked --all-targets -- -D warnings`: passes.
-- `cargo build --locked`: passes.
-- `cargo audit`: exits successfully for the locked dependencies; the stricter `cargo deny` findings below remain unresolved.
-- Graphical smoke check under Xvfb: launch, populated printer view, click Test PDF, state persisted after restart. The output is readable by the independent Poppler `pdftotext` parser.
-- Linux/Windows build workflow is provided; Windows behavior has not been manually tested in this environment.
+## Automated evidence
+
+Checked in the Linux development environment with Rust stable 1.100.0 and Slint 1.18.1:
+
+- Twelve workspace tests pass: filename safety, duplicate names, collision-safe PDFs, delivery receipts, interrupted state commits, failed-job recovery, acknowledgement/replay prevention, corrupted-state recovery, filesystem notification delivery, and UI pages/search/filters/callbacks.
+- The Windows application and port monitor are cross-checked against the Windows target; Windows-specific code is also checked with Clippy.
+- CI builds/tests both Linux and Windows and packages the Windows executable plus monitor DLL.
+- `scripts/windows-smoke.ps1` is a real Windows spooler integration test, not a mock. It installs a temporary printer, prints three documents, verifies their PDF output, verifies retry does not replay them, pauses/resumes the printer, checks missing-folder recovery, and removes the printer. Check the current workflow's **Native Windows print integration** result before treating a package as Windows-validated.
+
+Manual Windows/Narrator testing, DPI/multi-monitor acceptance tests, and confirmation of notification activation under the owner's Windows policies still need a Windows desktop. Toast action handlers operate while the desktop process is alive; they are not registered as a separate out-of-process COM notification activator.
 
 ## Dependency review
 
-`cargo deny check` is **not clean**. Default source and dependency-ban checks pass. Its advisory check reports these upstream **unmaintained** transitive dependencies; none has an available compatible safe upgrade in the selected current Slint dependency graph:
+`cargo deny check` has unresolved upstream maintenance and license-policy findings. Prior source and dependency-ban checks pass. Slint's dependency graph includes these unmaintained transitive dependencies, without a compatible safe upgrade in the selected current graph:
 
 | Crate | Advisory |
 | --- | --- |
@@ -22,6 +25,12 @@ Checked in a Linux build environment on 2026-11-15 using Rust stable 1.100.0 and
 | zvariant | RUSTSEC-2026-0370 |
 | zvariant_derive | RUSTSEC-2026-0372 |
 
-The default license check also fails because no project license allowlist has been approved. This includes ordinary MIT/Apache dependencies as well as Slint's alternative license terms; it is not evidence that every dependency is incompatible. No advisories were suppressed and no application/Slint distribution license was selected on the owner's behalf. Review the dependency graph and select a distribution license policy before publishing a release.
+The default license check fails because no project license allowlist has been approved. This includes ordinary MIT/Apache dependencies as well as Slint's alternative terms; it is not evidence that every dependency is incompatible. No advisories were suppressed and no application/Slint distribution license was selected on the owner's behalf. Review the graph and select a distribution license policy before publishing a release.
 
-The app does not install a Windows virtual printer and is not a replacement for a print driver. The remaining Windows-specific work is listed in the README.
+## Operational boundaries
+
+- x64 Windows only for native installation; Microsoft Print to PDF and the Print Spooler must be available.
+- A first installation may need a Windows feature change/restart; policies may block installation of custom monitors.
+- The desktop process must be running for immediate final-folder delivery. When it is stopped, the monitor retains captured jobs for the next launch.
+- Incomplete/cancelled captures are retained for diagnosis; acknowledged completed captures are reclaimed when the next print starts.
+- PDF/A, password encryption and PDF editing are not exposed as supported controls.
