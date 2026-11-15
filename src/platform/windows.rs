@@ -3,13 +3,16 @@ use anyhow::ensure;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::{
     fs::OpenOptions,
-    io::Write,
+    io::{Read, Write},
     os::windows::{fs::OpenOptionsExt, process::CommandExt},
     process::Command,
 };
 use winreg::{RegKey, enums::*};
 fn powershell(script: &str) -> Result<std::process::Output> {
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let utf16: Vec<u8> = format!("$ProgressPreference='SilentlyContinue';{script}")
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
     Ok(Command::new("powershell.exe")
         .args([
             "-NoProfile",
@@ -22,6 +25,25 @@ fn powershell(script: &str) -> Result<std::process::Output> {
 }
 fn literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+fn prepare_installer(path: &Path, script: &str) -> Result<std::fs::File> {
+    let mut writer = OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .share_mode(1)
+        .open(path)?;
+    writer.write_all(script.as_bytes())?;
+    writer.sync_all()?;
+    drop(writer);
+    let mut locked = OpenOptions::new().read(true).share_mode(1).open(path)?;
+    let mut actual = Vec::new();
+    locked.read_to_end(&mut actual)?;
+    ensure!(
+        actual == script.as_bytes(),
+        "The installer script changed before administrator approval"
+    );
+    Ok(locked)
 }
 pub fn native_action(action: &str, printer: &Printer, port: u16) -> Result<()> {
     ensure!(
@@ -43,16 +65,10 @@ pub fn native_action(action: &str, printer: &Printer, port: u16) -> Result<()> {
         "__REQUEST__",
         &STANDARD.encode(serde_json::to_vec(&request)?),
     );
-    // Keep this file open without write/delete sharing through the UAC operation;
-    // another process cannot replace the script after the user approves elevation.
-    let mut locked = OpenOptions::new()
-        .create_new(true)
-        .read(true)
-        .write(true)
-        .share_mode(1)
-        .open(&script_path)?;
-    locked.write_all(script.as_bytes())?;
-    locked.sync_all()?;
+    // A write handle prevents Windows PowerShell's source reader from opening
+    // the script. Reopen read-only, verify under the lock, and retain that handle
+    // until elevation finishes so the checked script cannot be changed.
+    let _locked = prepare_installer(&script_path, &script)?;
     let arguments = format!(
         "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"",
         script_path.display()
@@ -75,13 +91,10 @@ pub fn native_action(action: &str, printer: &Printer, port: u16) -> Result<()> {
                 .unwrap_or("Windows could not configure the printer")
         );
     } else {
-        ensure!(
-            output.status.success(),
-            "Windows printer setup was cancelled or failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
         anyhow::bail!(
-            "Windows setup returned no confirmation. Use Install or repair to check the printer."
+            "Windows printer setup returned no confirmation. It may have been cancelled: {} {}",
+            String::from_utf8_lossy(&output.stdout).trim(),
+            String::from_utf8_lossy(&output.stderr).trim()
         );
     }
     Ok(())
@@ -509,4 +522,34 @@ pub fn capture_title(id: &str) -> Result<Option<String>> {
         return Ok(title);
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod installer_tests {
+    use super::*;
+    #[test]
+    fn locked_installer_is_readable_by_powershell_and_cannot_be_modified() {
+        let dir = tempfile::tempdir().expect("folder");
+        let path = dir.path().join("installer.ps1");
+        let locked = prepare_installer(&path, "Write-Output 'VPS installer readable'; exit 0")
+            .expect("prepare installer");
+        assert!(
+            OpenOptions::new().write(true).open(&path).is_err(),
+            "Another writer must be refused while administrator approval is pending"
+        );
+        let output = powershell(&format!(
+            "Set-ExecutionPolicy -Scope Process Bypass -Force; & {}",
+            literal(&path.to_string_lossy())
+        ))
+        .expect("PowerShell");
+        assert!(
+            output.status.success(),
+            "{} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("VPS installer readable"));
+        drop(locked);
+        assert!(OpenOptions::new().write(true).open(&path).is_ok());
+    }
 }
