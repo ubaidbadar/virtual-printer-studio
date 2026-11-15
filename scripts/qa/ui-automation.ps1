@@ -3,10 +3,11 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 . (Join-Path $PSScriptRoot 'process-exit.ps1')
+. (Join-Path $PSScriptRoot 'ui-diagnostics.ps1')
 [IO.Directory]::CreateDirectory($OutputDirectory)|Out-Null
 $App=(Resolve-Path -LiteralPath $App).Path
 $OutputDirectory=(Resolve-Path -LiteralPath $OutputDirectory).Path
-$env:VPS_QA_HOLD_SECONDS='30'
+$env:VPS_QA_HOLD_SECONDS='60'
 $env:SLINT_BACKEND='winit-software'
 $env:SLINT_SCALE_FACTOR='1'
 $process=Start-Process -FilePath $App -ArgumentList @('--ui-snapshot',('"'+(Join-Path $OutputDirectory 'scenes')+'"')) -PassThru -RedirectStandardError (Join-Path $OutputDirectory 'stderr.log')
@@ -21,13 +22,20 @@ try {
         Start-Sleep -Milliseconds 100
     } while((Get-Date) -lt $deadline)
     if($process.MainWindowHandle -eq [IntPtr]::Zero){throw 'No application window.'}
-    $root=[Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
+    $windowHandle=$process.MainWindowHandle
+    [VpsQaProcess]::ShowWindow($windowHandle,9)|Out-Null
+    [VpsQaProcess]::SetForegroundWindow($windowHandle)|Out-Null
+    Start-Sleep -Milliseconds 500
+    $root=[Windows.Automation.AutomationElement]::FromHandle($windowHandle)
+    Write-Host ("Native root: "+$root.Current.Name+"; process "+$root.Current.ProcessId)
+    if($root.Current.ProcessId -ne $process.Id){throw 'UI Automation attached to the wrong process.'}
     function Find-Button([string]$Label) {
         $condition=New-Object Windows.Automation.AndCondition(
             (New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty,$Label)),
             (New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Button)))
-        $deadline=(Get-Date).AddSeconds(3)
+        $deadline=(Get-Date).AddSeconds(15)
         do {
+            $root=[Windows.Automation.AutomationElement]::FromHandle($windowHandle)
             $button=$root.FindFirst([Windows.Automation.TreeScope]::Descendants,$condition)
             if($button){return $button}
             Start-Sleep -Milliseconds 100
@@ -54,11 +62,12 @@ try {
     if((Find-Button 'Printers').Current.IsEnabled){throw 'Modal leaves background navigation enabled.'}
     Invoke-Button 'Cancel'
     Find-Button '+ New printer'|Out-Null
-    $exitCode=Wait-VpsProcess $process $nativeHandle 45000
+    $exitCode=Wait-VpsProcess $process $nativeHandle 90000
     if($exitCode -ne 0){throw "Application failed: $exitCode"}
     $results|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $OutputDirectory 'results.json') -Encoding UTF8
     Write-Host 'PASS: native Windows UI Automation exposes and operates navigation and the new-printer dialog.'
 } finally {
+    if($root -and !$process.HasExited){Save-VpsUiDiagnostics $root $OutputDirectory 'accessibility-window'}
     $env:VPS_QA_HOLD_SECONDS=$null
     $process.Refresh()
     if(!$process.HasExited){Stop-Process -Id $process.Id -Force}

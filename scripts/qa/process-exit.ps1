@@ -6,6 +6,8 @@ using System.Runtime.InteropServices;
 public static class VpsQaProcess {
  [DllImport("kernel32.dll",SetLastError=true)]
  public static extern bool GetExitCodeProcess(IntPtr process,out uint exitCode);
+ [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+ [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window,int command);
 }
 '@
 function Wait-VpsProcess([Diagnostics.Process]$Process,[IntPtr]$NativeHandle,[int]$TimeoutMilliseconds=120000) {

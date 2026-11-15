@@ -4,6 +4,7 @@ if(($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 . (Join-Path $PSScriptRoot 'ui-diagnostics.ps1')
+. (Join-Path $PSScriptRoot 'process-exit.ps1')
 $data=Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'VirtualPrinterStudio\VirtualPrinterStudio\data'
 if(Test-Path -LiteralPath $data){throw 'Live GUI acceptance requires a fresh Windows user profile; existing application data will not be changed.'}
 [IO.Directory]::CreateDirectory($OutputDirectory)|Out-Null
@@ -58,6 +59,8 @@ try {
     $deadline=(Get-Date).AddSeconds(15)
     do {$process.Refresh();if($process.MainWindowHandle -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 100}while((Get-Date) -lt $deadline)
     if($process.MainWindowHandle -eq [IntPtr]::Zero){throw 'No live application window.'}
+    [VpsQaProcess]::ShowWindow($process.MainWindowHandle,9)|Out-Null
+    [VpsQaProcess]::SetForegroundWindow($process.MainWindowHandle)|Out-Null
     $root=[Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
     Invoke-Control 'Get started'
     Invoke-Control '+ New printer'
