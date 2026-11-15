@@ -39,6 +39,17 @@ pub fn native_action(action: &str, printer: &Printer) -> Result<()> {
     let script_path = temp.path().join("configure-printer.ps1");
     let result_path = temp.path().join("result.json");
     let exe = std::env::current_exe()?;
+    let dll_path = exe.with_file_name(vps_core::MONITOR_DLL);
+    let _locked_dll = if action == "ensure" && dll_path.exists() {
+        Some(
+            OpenOptions::new()
+                .read(true)
+                .share_mode(1)
+                .open(&dll_path)?,
+        )
+    } else {
+        None
+    };
     let request = serde_json::json!({"action":action,"id":printer.id,"name":printer.name,"enabled":printer.enabled,"sid":sid,"dll":exe.with_file_name(vps_core::MONITOR_DLL),"result":result_path});
     let script = include_str!("native.ps1").replace(
         "__REQUEST__",
@@ -147,6 +158,7 @@ pub fn notify_saved(path: &Path) -> Result<()> {
     // idempotent for its lifetime. No UI object crosses into this worker.
     thread_local! { static COM: () = { let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }; }; }
     COM.with(|_| {});
+    register_notification_shortcut()?;
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let (key, _) = hkcu.create_subkey("Software\\Classes\\AppUserModelId\\VirtualPrinterStudio")?;
     key.set_value("DisplayName", &"Virtual Printer Studio")?;
@@ -224,4 +236,52 @@ pub fn health(printer: &Printer) -> Result<String> {
         String::from_utf8_lossy(&output.stderr).trim()
     );
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn register_notification_shortcut() -> Result<()> {
+    use ::windows::{
+        Win32::{
+            Storage::EnhancedStorage::PKEY_AppUserModel_ID,
+            System::{
+                Com::{
+                    CLSCTX_INPROC_SERVER, CoCreateInstance, IPersistFile,
+                    StructuredStorage::{PROPVARIANT, PVCHF_DEFAULT, PropVariantChangeType},
+                },
+                Variant::VT_LPWSTR,
+            },
+            UI::Shell::{
+                IShellLinkW, PropertiesSystem::IPropertyStore,
+                SetCurrentProcessExplicitAppUserModelID, ShellLink,
+            },
+        },
+        core::{HSTRING, Interface, w},
+    };
+    let appdata = std::env::var_os("APPDATA")
+        .ok_or_else(|| anyhow::anyhow!("Cannot locate the Start menu"))?;
+    let shortcut = PathBuf::from(appdata)
+        .join("Microsoft/Windows/Start Menu/Programs/Virtual Printer Studio.lnk");
+    std::fs::create_dir_all(
+        shortcut
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Invalid shortcut folder"))?,
+    )?;
+    let executable = std::env::current_exe()?;
+    // Safety: COM was initialized on this delivery thread before this call. The
+    // shell-link interfaces and UTF-16 strings remain alive throughout each call;
+    // PROPVARIANT owns and frees its contents through windows-rs Drop.
+    unsafe {
+        SetCurrentProcessExplicitAppUserModelID(w!("VirtualPrinterStudio"))?;
+        let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+        link.SetPath(&HSTRING::from(executable.to_string_lossy().as_ref()))?;
+        link.SetDescription(w!("Virtual Printer Studio"))?;
+        let properties: IPropertyStore = link.cast()?;
+        let source = PROPVARIANT::from("VirtualPrinterStudio");
+        let mut value = PROPVARIANT::default();
+        PropVariantChangeType(&mut value, &source, PVCHF_DEFAULT, VT_LPWSTR)?;
+        properties.SetValue(&PKEY_AppUserModel_ID, &value)?;
+        properties.Commit()?;
+        let persist: IPersistFile = link.cast()?;
+        persist.Save(&HSTRING::from(shortcut.to_string_lossy().as_ref()), true)?;
+    }
+    Ok(())
 }

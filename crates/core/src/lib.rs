@@ -272,7 +272,14 @@ pub fn load_state(path: &Path) -> Result<(State, Option<String>)> {
     if !path.exists() {
         return Ok((State::default(), None));
     }
-    let parse = |p: &Path| -> Result<State> { Ok(serde_json::from_slice(&fs::read(p)?)?) };
+    let parse = |p: &Path| -> Result<State> {
+        let json: serde_json::Value = serde_json::from_slice(&fs::read(p)?)?;
+        let mut state: State = serde_json::from_value(json.clone())?;
+        if json.get("theme").is_none() {
+            state.theme = if state.dark { 1 } else { 0 };
+        }
+        Ok(state)
+    };
     match parse(path) {
         Ok(state) => Ok((state, None)),
         Err(original) => {

@@ -19,13 +19,14 @@ Manual Windows/Narrator testing, DPI/multi-monitor acceptance tests, and confirm
 
 | Crate | Advisory |
 | --- | --- |
+| bincode | RUSTSEC-2025-0141 |
 | pin-utils | RUSTSEC-2026-0441 |
 | ttf-parser | RUSTSEC-2026-0192 |
 | zbus_names | RUSTSEC-2026-0371 |
 | zvariant | RUSTSEC-2026-0370 |
 | zvariant_derive | RUSTSEC-2026-0372 |
 
-The default license check fails because no project license allowlist has been approved. This includes ordinary MIT/Apache dependencies as well as Slint's alternative terms; it is not evidence that every dependency is incompatible. No advisories were suppressed and no application/Slint distribution license was selected on the owner's behalf. Review the graph and select a distribution license policy before publishing a release.
+`cargo audit` completes with six unmaintained-dependency warnings and no reported vulnerability errors. The default license check fails because no project license allowlist has been approved. This includes ordinary MIT/Apache dependencies as well as Slint's alternative terms; it is not evidence that every dependency is incompatible. No advisories were suppressed and no application/Slint distribution license was selected on the owner's behalf. Review the graph and select a distribution license policy before publishing a release.
 
 ## Operational boundaries
 

@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 try {
     $r = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__REQUEST__')) | ConvertFrom-Json
     if ($r.id -notmatch '^[A-Za-z0-9-]{1,80}$' -or $r.sid -notmatch '^S-1-5-[0-9-]+$') { throw 'Invalid printer identity.' }
+    $stage = 'Preparing secure capture folders'
     $root = Join-Path $env:ProgramData 'VirtualPrinterStudio'
     $monitor = 'Virtual Printer Studio 0.2'
     $port = 'VPS_' + $r.id
@@ -11,8 +12,10 @@ using System.Runtime.InteropServices;
 public class VpsSpooler {
  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct MonitorInfo { public string Name; public string Environment; public string Dll; }
  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct PortInfo { public string Name; }
- [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool AddMonitor(string server, uint level, ref MonitorInfo info);
- [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool AddPortEx(string server, uint level, ref PortInfo info, string monitor);
+ [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] private static extern bool AddMonitor(string server, uint level, ref MonitorInfo info);
+ [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] private static extern bool AddPortEx(string server, uint level, ref PortInfo info, string monitor);
+ public static bool InstallMonitor(ref MonitorInfo info) { return AddMonitor(null,2,ref info); }
+ public static bool InstallPort(ref PortInfo info, string monitor) { return AddPortEx(null,1,ref info,monitor); }
  [DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool OpenPrinter(string name, out IntPtr printer, IntPtr defaults);
  [DllImport("winspool.drv", SetLastError=true)] public static extern bool SetPrinter(IntPtr printer, uint level, IntPtr info, uint command);
  [DllImport("winspool.drv")] public static extern bool ClosePrinter(IntPtr printer);
@@ -56,6 +59,7 @@ public class VpsSpooler {
         throw 'An unregistered capture folder already exists. Contact support before reusing it.'
     }
     if ($r.action -eq 'ensure') { Start-Service Spooler -ErrorAction Stop }
+    $stage = 'Reading Windows printers'
     $printer = Get-Printer -ErrorAction Stop | Where-Object PortName -eq $port | Select-Object -First 1
     if ($r.action -eq 'remove') {
         if ($printer -and @(Get-PrintJob -PrinterName $printer.Name -ErrorAction Stop).Count -gt 0) { throw 'The printer has pending Windows print jobs. Resume or cancel those jobs before removing it.' }
@@ -79,29 +83,35 @@ public class VpsSpooler {
             Set-Content -LiteralPath $ownerPath -Value $r.sid -Encoding ASCII
             $dll = Join-Path ([Environment]::SystemDirectory) 'vps_port_monitor_0_2.dll'
             $monitorKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\' + $monitor
+            $stage = 'Installing the port monitor'
             if (!(Test-Path -LiteralPath $monitorKey)) {
                 if (!(Test-Path -LiteralPath $r.dll)) { throw 'The printer monitor DLL is missing. Extract the complete Windows download before starting the app.' }
                 Copy-Item -LiteralPath $r.dll -Destination $dll -Force
                 $info = New-Object VpsSpooler+MonitorInfo
                 $info.Name = $monitor; $info.Environment = 'Windows x64'; $info.Dll = [IO.Path]::GetFileName($dll)
-                if (![VpsSpooler]::AddMonitor($null, 2, [ref]$info)) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) }
+                if (![VpsSpooler]::InstallMonitor([ref]$info)) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) }
             }
+            $stage = 'Checking the Microsoft PDF driver'
             if (!(Get-PrinterDriver -Name 'Microsoft Print To PDF' -ErrorAction SilentlyContinue)) {
                 $feature = Enable-WindowsOptionalFeature -Online -FeatureName 'Printing-PrintToPDFServices-Features' -All -NoRestart
                 if ($feature.RestartNeeded) { throw 'Restart Windows to finish enabling Microsoft Print to PDF, then repair this printer.' }
                 Add-PrinterDriver -Name 'Microsoft Print To PDF' -ErrorAction Stop
             }
+            $stage = 'Registering the capture port'
             if (!(Get-PrinterPort -Name $port -ErrorAction SilentlyContinue)) {
                 $info = New-Object VpsSpooler+PortInfo; $info.Name = $port
-                if (![VpsSpooler]::AddPortEx($null, 1, [ref]$info, $monitor)) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) }
+                if (![VpsSpooler]::InstallPort([ref]$info, $monitor)) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) }
             }
+            $stage = 'Checking printer name availability'
             $collision = Get-Printer -Name $r.name -ErrorAction SilentlyContinue
             if ($collision -and $collision.PortName -ne $port) { throw 'Another Windows printer already uses this name. Choose another printer name.' }
+            $stage = 'Creating the Windows printer'
             if (!$printer) { Add-Printer -Name $r.name -DriverName 'Microsoft Print To PDF' -PortName $port -ErrorAction Stop }
             elseif ($printer.Name -ne $r.name) { Rename-Printer -Name $printer.Name -NewName $r.name -ErrorAction Stop }
             $printer = Get-Printer -Name $r.name -ErrorAction Stop
         }
         if (!$printer) { throw 'The Windows printer is missing. Use Install or repair to restore it.' }
+        $stage = 'Applying printer pause or resume'
         $defaults = New-Object VpsSpooler+Defaults; $defaults.Access = 4 # PRINTER_ACCESS_ADMINISTER
         $handle = [IntPtr]::Zero
         if (![VpsSpooler]::OpenAdminPrinter($printer.Name, [ref]$handle, [ref]$defaults)) { throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error())) }
@@ -113,6 +123,7 @@ public class VpsSpooler {
     @{ok=$true; error=''} | ConvertTo-Json -Compress | Set-Content -LiteralPath $r.result -Encoding UTF8
     exit 0
 } catch {
-    if ($r -and $r.result) { @{ok=$false; error=$_.Exception.Message} | ConvertTo-Json -Compress | Set-Content -LiteralPath $r.result -Encoding UTF8 }
+    Write-Output ("Setup failed at ${stage}: " + $_.Exception.Message + "`n" + $_.ScriptStackTrace)
+    if ($r -and $r.result) { @{ok=$false; error=("${stage}: " + $_.Exception.Message)} | ConvertTo-Json -Compress | Set-Content -LiteralPath $r.result -Encoding UTF8 }
     exit 1
 }
