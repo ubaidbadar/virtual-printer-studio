@@ -1,0 +1,26 @@
+import { Button, Switch } from "std-widgets.slint";
+import { Tokens } from "../theme/tokens.slint";
+export struct PrinterView { id: string, name: string, folder: string, status: string, enabled: bool, count: int }
+export component PrinterCard inherits Rectangle {
+    in property <PrinterView> printer;
+    callback details(); callback toggle(bool); callback test();
+    min-height: 166px;
+    background: Tokens.surface; border-color: Tokens.border; border-width: 1px; border-radius: Tokens.radius;
+    VerticalLayout {
+        padding: Tokens.gap; spacing: 10px;
+        HorizontalLayout {
+            spacing: 10px;
+            Text { text: "▣"; color: Tokens.accent; font-size: 26px; }
+            Text { text: root.printer.name; color: Tokens.text; font-size: 17px; font-weight: 600; horizontal-stretch: 1; }
+            Text { text: root.printer.status; color: Tokens.secondary; font-size: 12px; }
+        }
+        Text { text: root.printer.folder; color: Tokens.secondary; overflow: elide; }
+        Text { text: @tr("{} PDFs saved", root.printer.count); color: Tokens.secondary; }
+        HorizontalLayout {
+            spacing: 10px;
+            Button { text: @tr("Details"); clicked => { root.details(); } }
+            Button { text: @tr("Test PDF"); clicked => { root.test(); } }
+            Switch { checked: root.printer.enabled; accessible-label: @tr("Enable printer"); toggled => { root.toggle(self.checked); } }
+        }
+    }
+}

@@ -1,0 +1,156 @@
+import { Button, LineEdit, ListView, ComboBox, Switch, ScrollView } from "std-widgets.slint";
+import { Tokens } from "theme/tokens.slint";
+import { PrinterCard, PrinterView } from "components/card.slint";
+export { Tokens, PrinterView }
+export struct ActivityView { printer: string, file: string, status: string, path: string }
+export component AppWindow inherits Window {
+    icon: @image-url("../assets/logo.svg");
+    title: @tr("Virtual Printer Studio"); preferred-width: 1220px; preferred-height: 800px; min-width: 900px; min-height: 620px;
+    background: Tokens.bg; default-font-size: 14px;
+    in property <[PrinterView]> printers;
+    in property <[[PrinterView]]> printer-rows;
+    out property <int> columns: root.width >= 1150px ? 3 : 2;
+    out property <length> card-width: (root.width - 278px - (root.columns - 1) * Tokens.gap) / root.columns;
+    changed columns => { root.search-changed(root.search, root.filter); }
+    in property <[ActivityView]> activity;
+    in-out property <int> page: 0;
+    in-out property <bool> editor: false;
+    in-out property <bool> welcome: true;
+    in-out property <string> edit-id;
+    in-out property <string> printer-name;
+    in-out property <string> folder;
+    in-out property <string> pattern: "{title}_{date}_{counter}";
+    in-out property <string> message;
+    in-out property <string> search;
+    in-out property <int> filter;
+    in-out property <string> default-folder;
+    callback search-changed(string, int);
+    callback save-printer(string, string, string, string);
+    callback select-printer(string);
+    callback toggle-printer(string, bool);
+    callback test-printer(string);
+    callback delete-printer(string);
+    callback browse(bool);
+    callback open-path(string);
+    callback export-backup(); callback import-backup();
+    callback save-settings(bool, string);
+    callback dismiss-welcome();
+    HorizontalLayout {
+        spacing: 0px;
+        Rectangle {
+            width: 222px; background: Tokens.bg;
+            VerticalLayout {
+                padding: 12px; spacing: 8px;
+                Text { text: "▣  Virtual Printer Studio"; color: Tokens.text; font-weight: 600; height: 48px; }
+                Button { text: @tr("Printers"); primary: root.page == 0; clicked => { root.page = 0; } }
+                Button { text: @tr("Activity"); primary: root.page == 1; clicked => { root.page = 1; } }
+                Button { text: @tr("Presets"); primary: root.page == 2; clicked => { root.page = 2; } }
+                Rectangle { vertical-stretch: 1; }
+                Text { text: @tr("Local workspace · v0.1"); color: Tokens.secondary; font-size: 12px; }
+                Button { text: @tr("Settings"); primary: root.page == 3; clicked => { root.page = 3; } }
+            }
+        }
+        VerticalLayout {
+            padding: 28px; spacing: Tokens.gap;
+            Text { text: root.page == 0 ? @tr("Printers") : root.page == 1 ? @tr("Activity") : root.page == 2 ? @tr("Presets") : @tr("Settings"); color: Tokens.text; font-size: 28px; font-weight: 600; }
+            Text { text: @tr("Printer profiles and PDF output, together in one place."); color: Tokens.secondary; }
+            if root.message != "": Rectangle {
+                min-height: 52px; background: Tokens.surface; border-radius: Tokens.radius;
+                HorizontalLayout { padding: 12px; Text { text: root.message; color: Tokens.text; wrap: word-wrap; horizontal-stretch: 1; } Button { text: @tr("Dismiss"); clicked => { root.message = ""; } } }
+            }
+            if root.page == 0: VerticalLayout {
+                spacing: Tokens.gap;
+                HorizontalLayout {
+                    LineEdit { placeholder-text: @tr("Search printers"); text <=> root.search; edited => { root.search-changed(root.search, root.filter); } }
+                    ComboBox { model: [@tr("All printers"), @tr("Active"), @tr("Needs attention")]; current-index <=> root.filter; selected => { root.search-changed(root.search, root.filter); } }
+                    Button { text: @tr("+ New printer"); primary: true; clicked => { root.edit-id = ""; root.printer-name = ""; root.folder = root.default-folder; root.pattern = "{title}_{date}_{counter}"; root.editor = true; } }
+                }
+                if root.printers.length == 0: VerticalLayout {
+                    alignment: center;
+                    Text { text: @tr("Your PDFs start here"); color: Tokens.text; font-size: 24px; horizontal-alignment: center; }
+                    Text { text: @tr("Create a printer profile, or adjust your search."); color: Tokens.secondary; horizontal-alignment: center; }
+                }
+                ListView {
+                    for row in root.printer-rows: Rectangle {
+                        height: 182px;
+                        HorizontalLayout {
+                            padding-bottom: Tokens.gap; spacing: Tokens.gap; alignment: start;
+                            for printer in row: PrinterCard {
+                                width: root.card-width; horizontal-stretch: 0;
+                                printer: printer;
+                                details => { root.select-printer(printer.id); }
+                                toggle(enabled) => { root.toggle-printer(printer.id, enabled); }
+                                test => { root.test-printer(printer.id); }
+                            }
+                        }
+                    }
+                }
+            }
+            if root.page == 1: VerticalLayout {
+                Text { text: @tr("Saved PDFs and failed attempts. Your files stay on your computer."); color: Tokens.secondary; }
+                if root.activity.length == 0: Text { text: @tr("No activity yet. Save a test PDF from a printer profile."); color: Tokens.text; }
+                ListView { for item in root.activity: Rectangle {
+                    height: 80px; background: Tokens.surface;
+                    HorizontalLayout { padding: 16px; spacing: 16px;
+                        VerticalLayout { Text { text: item.file; color: Tokens.text; } Text { text: item.printer + " · " + item.status; color: Tokens.secondary; } }
+                        Button { text: @tr("Open"); enabled: item.path != ""; clicked => { root.open-path(item.path); } }
+                    }
+                } }
+            }
+            if root.page == 2: VerticalLayout {
+                alignment: center;
+                Text { text: @tr("Presets are coming soon"); color: Tokens.text; font-size: 24px; }
+                Text { text: @tr("For now, customise the output folder and file pattern for each printer."); color: Tokens.secondary; wrap: word-wrap; }
+            }
+            if root.page == 3: ScrollView { VerticalLayout {
+                spacing: 24px; padding: 8px;
+                Text { text: @tr("Appearance"); color: Tokens.text; font-size: 18px; font-weight: 600; }
+                Switch { text: @tr("Dark theme"); checked: Tokens.dark; toggled => { Tokens.dark = self.checked; root.save-settings(Tokens.dark, root.default-folder); } }
+                Text { text: @tr("Default output folder"); color: Tokens.text; }
+                HorizontalLayout {
+                    LineEdit { text <=> root.default-folder; }
+                    Button { text: @tr("Browse"); clicked => { root.browse(true); } }
+                    Button { text: @tr("Save"); clicked => { root.save-settings(Tokens.dark, root.default-folder); } }
+                }
+                Text { text: @tr("Backup"); color: Tokens.text; font-size: 18px; font-weight: 600; }
+                HorizontalLayout { Button { text: @tr("Export profiles"); clicked => { root.export-backup(); } } Button { text: @tr("Import profiles"); clicked => { root.import-backup(); } } }
+                Text { text: @tr("About"); color: Tokens.text; font-size: 18px; font-weight: 600; }
+                Text { text: @tr("Virtual Printer Studio 0.1.0\nMade with Slint · https://slint.dev\n\nThis version manages local profiles and generates test PDFs.\nWindows spooler capture, tray operation and notifications are not installed.\nSlint distribution requires an appropriate Slint licence."); color: Tokens.secondary; wrap: word-wrap; }
+            } }
+        }
+    }
+    if root.welcome || root.editor: Rectangle {
+        background: #00000066;
+        Rectangle {
+            width: 580px; height: root.welcome ? 360px : 540px;
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            background: Tokens.surface; border-radius: 12px;
+            VerticalLayout {
+                padding: 28px; spacing: 16px;
+                if root.welcome: VerticalLayout {
+                    spacing: 20px;
+                    Text { text: @tr("Welcome to Virtual Printer Studio"); color: Tokens.text; font-size: 26px; wrap: word-wrap; }
+                    Text { text: @tr("Create a profile, choose a folder, and save your first test PDF.\n\nSystem-wide virtual printing will require the Windows print adapter, which is not included in this version."); color: Tokens.secondary; wrap: word-wrap; }
+                    Button { text: @tr("Get started"); primary: true; clicked => { root.dismiss-welcome(); } }
+                }
+                if !root.welcome: VerticalLayout {
+                    spacing: 12px;
+                    Text { text: root.edit-id == "" ? @tr("New printer profile") : @tr("Printer details"); color: Tokens.text; font-size: 24px; font-weight: 600; }
+                    Text { text: @tr("Printer name"); color: Tokens.text; }
+                    LineEdit { text <=> root.printer-name; placeholder-text: @tr("e.g. Invoices"); }
+                    Text { text: @tr("Save PDFs to"); color: Tokens.text; }
+                    HorizontalLayout { LineEdit { text <=> root.folder; } Button { text: @tr("Browse"); clicked => { root.browse(false); } } }
+                    Text { text: @tr("File name pattern"); color: Tokens.text; }
+                    LineEdit { text <=> root.pattern; }
+                    Text { text: @tr("Available: {{title}}, {{date}}, {{time}}, {{counter}}\nFiles are never overwritten. Output folders must already exist."); color: Tokens.secondary; wrap: word-wrap; }
+                    Text { text: root.message; color: Tokens.secondary; wrap: word-wrap; }
+                    HorizontalLayout {
+                        if root.edit-id != "": Button { text: @tr("Delete profile"); clicked => { root.delete-printer(root.edit-id); } }
+                        Button { text: @tr("Cancel"); clicked => { root.editor = false; } }
+                        Button { text: @tr("Save profile"); primary: true; clicked => { root.save-printer(root.edit-id, root.printer-name, root.folder, root.pattern); } }
+                    }
+                }
+            }
+        }
+    }
+}
