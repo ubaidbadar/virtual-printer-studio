@@ -326,3 +326,5 @@ mod recovery_tests {
         assert_eq!(fs::read_dir(dir.path()).expect("files").count(), 3);
     }
 }
+
+pub mod lpr;

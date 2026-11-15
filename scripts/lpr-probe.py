@@ -1,7 +1,7 @@
 """Windows transport acceptance probe using only the inbox PDF/TCP-IP drivers."""
 import socket, threading, subprocess, pathlib, uuid, time, json
 root=pathlib.Path('target/lpr-probe').resolve();root.mkdir(parents=True,exist_ok=True)
-name='VPS LPR '+str(uuid.uuid4())[:8]; queue='VPS_'+str(uuid.uuid4());jobs=[];errors=[]
+name='VPS LPR '+str(uuid.uuid4())[:8]; queue='VPS_'+uuid.uuid4().hex[:24];jobs=[];errors=[]
 listener=socket.socket();listener.bind(('127.0.0.1',515));listener.listen(8);listener.settimeout(90)
 def read_line(stream):
  line=stream.readline(4096)
@@ -27,7 +27,7 @@ script=r'''$ErrorActionPreference='Stop'
 Start-Service Spooler
 $port='__QUEUE__';$name='__NAME__'
 try {
- Add-PrinterPort -Name $port -LprHostAddress '127.0.0.1' -LprQueueName $port -LprByteCounting
+ New-CimInstance -ClassName Win32_TCPIPPrinterPort -Property @{Name=$port;Protocol=[uint32]2;HostAddress='127.0.0.1';PortNumber=[uint32]515;Queue=$port;ByteCount=$true;SNMPEnabled=$false} | Out-Null
  Add-Printer -Name $name -DriverName 'Microsoft Print To PDF' -PortName $port
  Write-Output 'Installed PDF printer with built-in LPR port.'
  Add-Type -AssemblyName System.Drawing
