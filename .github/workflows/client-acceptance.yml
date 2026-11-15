@@ -1,0 +1,56 @@
+name: Windows client acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      machine:
+        description: Actual client OS and architecture to test
+        required: true
+        default: windows-11-arm-x64-emulated
+        type: choice
+        options: [windows-11-arm-x64-emulated, windows-10-x64-self-hosted, windows-11-x64-self-hosted]
+      artifact_run_id:
+        description: Successful Desktop checks run containing the x64 QA build
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  accept:
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    runs-on: ${{ fromJSON(inputs.machine == 'windows-11-arm-x64-emulated' && '["windows-11-arm"]' || (inputs.machine == 'windows-10-x64-self-hosted' && '["self-hosted","Windows","X64","vps-windows-10-x64","vps-interactive"]' || '["self-hosted","Windows","X64","vps-windows-11-x64","vps-interactive"]')) }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: virtual-printer-studio-windows
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: target/qa-package
+      - name: Verify actual Windows client OS
+        shell: pwsh
+        env:
+          VPS_EXPECTED_MACHINE: ${{ inputs.machine }}
+        run: ./scripts/qa/record-platform.ps1 -OutputDirectory target/client-evidence -ExpectedMachine $env:VPS_EXPECTED_MACHINE
+      - name: Real printer acceptance
+        shell: pwsh
+        run: ./scripts/windows-smoke.ps1 -App target/qa-package/virtual-printer-studio.exe -TestRoot target/client-evidence/printing
+      - name: Render client-area visual states
+        shell: pwsh
+        run: |
+          $env:SLINT_BACKEND='winit-software'
+          & target/qa-package/virtual-printer-studio.exe --ui-snapshot target/client-evidence/visuals
+          if ($LASTEXITCODE -ne 0) { throw 'UI snapshot export failed.' }
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r scripts/qa/requirements.txt
+      - name: Measure supplied design differences
+        run: python scripts/qa/compare-visuals.py --actual target/client-evidence/visuals --output target/client-evidence/comparison
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: client-evidence-${{ inputs.machine }}
+          path: target/client-evidence/
+          if-no-files-found: error
