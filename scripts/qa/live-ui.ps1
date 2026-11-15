@@ -3,6 +3,7 @@ $ErrorActionPreference='Stop'
 if(($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') -and $env:VPS_DISPOSABLE_TEST_VM -ne '1'){throw 'This acceptance script requires a disposable GitHub Actions Windows desktop.'}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+. (Join-Path $PSScriptRoot 'ui-diagnostics.ps1')
 $data=Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'VirtualPrinterStudio\VirtualPrinterStudio\data'
 if(Test-Path -LiteralPath $data){throw 'Live GUI acceptance requires a fresh Windows user profile; existing application data will not be changed.'}
 [IO.Directory]::CreateDirectory($OutputDirectory)|Out-Null
@@ -69,6 +70,7 @@ try {
     $state=Wait-State {param($s) @($s.printers|Where-Object {$_.name -eq $name -and $_.count -eq 1}).Count -eq 1}
     if(@(Get-ChildItem -LiteralPath $output -Filter '*.pdf').Count -ne 1){throw 'GUI test-page action did not save its PDF.'}
     $results.Add('GUI test-page action saved a real Windows driver PDF')
+    Save-VpsUiDiagnostics $root $OutputDirectory 'after-print'
     $toggle=Find-Element 'Enable printer'
     $toggle.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
     Wait-State {param($s) $s.printers[0].enabled -eq $false}|Out-Null
@@ -86,6 +88,7 @@ try {
     $results|ConvertTo-Json|Set-Content (Join-Path $OutputDirectory 'results.json') -Encoding UTF8
     Write-Host 'PASS: live GUI onboarding, profile creation, native installation, test printing, pause/resume and deletion.'
 } finally {
+    if($root){Save-VpsUiDiagnostics $root $OutputDirectory 'final-window'}
     $process.Refresh()
     if(!$process.HasExited){Stop-Process -Id $process.Id -Force}
     if(Test-Path -LiteralPath $data){Copy-Item -LiteralPath $data -Destination (Join-Path $OutputDirectory 'application-data') -Recurse -Force}
