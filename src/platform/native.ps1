@@ -66,7 +66,10 @@ public class VpsSpooler {
             elseif ($printer.Name -ne $r.name) { Rename-Printer -Name $printer.Name -NewName $r.name }
             $printer = Get-Printer -Name $r.name -ErrorAction Stop
             # Only this account, SYSTEM and administrators may submit jobs.
-            $permissions = 'O:BAG:SYD:(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x00020008;;;' + $r.sid + ')'
+            # Printer rights alone do not propagate to child print jobs. The PDF
+            # pipeline must also be able to query the originating job metadata.
+            $permissions = 'O:BAG:SYD:(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x00020008;;;' + $r.sid + ')' +
+                '(A;OIIO;0x000F0030;;;SY)(A;OIIO;0x000F0030;;;BA)(A;OIIO;0x000F0030;;;' + $r.sid + ')'
             Set-Printer -Name $printer.Name -PermissionSDDL $permissions
             New-ItemProperty -LiteralPath $ownerRoot -Name $r.id -Value $r.sid -PropertyType String -Force | Out-Null
         }
