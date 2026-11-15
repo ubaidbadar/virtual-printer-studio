@@ -26,10 +26,10 @@ jobs:
         run: |
           pip install -r scripts/qa/requirements.txt
           sudo apt-get update -qq
-          sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage
+          sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage aria2
           if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
           mkdir -p target/win10-vm/pwsh
-          curl -fL --retry 3 'https://software-download.microsoft.com/download/db/444969d5-f34g-4e03-ac9d-1f9786c69161/19044.1288.211006-0501.21h2_release_svc_refresh_CLIENT_LTSC_EVAL_x64FRE_en-us.iso' -o target/win10-vm/windows.iso
+          aria2c --console-log-level=warn --summary-interval=30 --max-connection-per-server=16 --split=16 --min-split-size=16M --file-allocation=none --timeout=60 --max-tries=3 --retry-wait=5 --dir=target/win10-vm --out=windows.iso 'https://software-download.microsoft.com/download/pr/19044.1288.211006-0501.21h2_release_svc_refresh_CLIENT_LTSC_EVAL_x64FRE_en-us.iso'
           echo 'e4ab2e3535be5748252a8d5d57539a6e59be8d6726345ee10e7afd2cb89fefb5  target/win10-vm/windows.iso' | sha256sum -c -
           curl -fL --retry 3 https://github.com/PowerShell/PowerShell/releases/download/v7.4.13/PowerShell-7.4.13-win-x64.zip -o target/win10-vm/pwsh.zip
           unzip -q target/win10-vm/pwsh.zip -d target/win10-vm/pwsh

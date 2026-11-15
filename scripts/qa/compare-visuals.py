@@ -41,5 +41,8 @@ for row in results:
     lines.append(f"| {row['scene']} | {row['status']} | {row.get('changed_percent', 'N/A')} |")
 (args.output/'report.md').write_text('\n'.join(lines)+'\n')
 print('\n'.join(lines))
+print('PIXEL-PERFECT: ' + ('YES' if all(r['status'] == 'pixel perfect' for r in results) else 'NO'))
+if any(r['status'] in ('not captured', 'size mismatch') for r in results[:7]):
+    raise SystemExit('Required application screenshot missing or incorrectly sized')
 if args.require_pixel_perfect and any(row['status'] != 'pixel perfect' for row in results):
     raise SystemExit(1)
