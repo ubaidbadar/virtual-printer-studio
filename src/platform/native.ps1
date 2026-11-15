@@ -68,7 +68,7 @@ public class VpsSpooler {
             # Only this account, SYSTEM and administrators may submit jobs.
             $permissions = 'O:BAG:SYD:(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x00020008;;;' + $r.sid + ')'
             Set-Printer -Name $printer.Name -PermissionSDDL $permissions
-            $owners.SetValue([string]$r.id,[string]$r.sid,[Microsoft.Win32.RegistryValueKind]::String)
+            New-ItemProperty -LiteralPath $ownerRoot -Name $r.id -Value $r.sid -PropertyType String -Force | Out-Null
         }
         if (!$printer) { throw 'The Windows printer is missing. Select Install or repair.' }
         $stage = 'Applying pause or resume'
