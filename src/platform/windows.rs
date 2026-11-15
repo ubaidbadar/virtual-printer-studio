@@ -398,7 +398,12 @@ pub fn capture_title(id: &str) -> Result<Option<String>> {
         mut call: impl FnMut(*mut u8, u32, &mut u32, &mut u32) -> i32,
     ) -> Result<(Vec<usize>, u32)> {
         let (mut needed, mut count) = (0, 0);
-        call(std::ptr::null_mut(), 0, &mut needed, &mut count);
+        if call(std::ptr::null_mut(), 0, &mut needed, &mut count) == 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(122) {
+                return Err(error.into());
+            }
+        }
         for _ in 0..3 {
             if needed == 0 {
                 return Ok((Vec::new(), 0));

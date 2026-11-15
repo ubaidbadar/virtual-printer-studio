@@ -112,8 +112,11 @@ fn scene(
     } else {
         760.0
     };
-    ui.window()
-        .set_size(slint::LogicalSize::new(1280.0, height));
+    let scale = ui.window().scale_factor();
+    ui.window().set_size(slint::PhysicalSize::new(
+        (1280.0 * scale).round() as u32,
+        (height * scale).round() as u32,
+    ));
     ui.window().request_redraw();
     slint::Timer::single_shot(Duration::from_millis(500), move || {
         let result = (|| -> anyhow::Result<()> {

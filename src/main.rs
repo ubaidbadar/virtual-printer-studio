@@ -569,6 +569,13 @@ mod ui_tests {
         ui.set_default_folder("C:\\PDFs".into());
         activate("+ New printer");
         assert!(ui.get_editor());
+        assert_eq!(
+            ElementHandle::find_by_accessible_label(&ui, "Printers")
+                .find(|element| element.accessible_role() == Some(AccessibleRole::Button))
+                .expect("navigation")
+                .accessible_enabled(),
+            Some(false)
+        );
         assert!(ui.get_edit_id().is_empty());
         assert_eq!(ui.get_folder(), "C:\\PDFs");
         ui.set_printer_name("Invoices".into());

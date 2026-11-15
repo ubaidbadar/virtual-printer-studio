@@ -30,6 +30,7 @@ export component AppWindow inherits Window {
     in property <int> printer-count; in property <int> saved-count; in property <int> queued-count;
     in-out property <int> page: 0;
     in-out property <bool> editor: false;
+    property <bool> modal-open: root.welcome || root.editor || root.confirm-clear;
     in-out property <bool> confirm-delete: false;
     in-out property <bool> confirm-clear: false;
     in-out property <bool> welcome: true;
@@ -75,12 +76,12 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 padding: 12px; spacing: 8px;
                 Text { text: @tr("Virtual Printer Studio"); color: Tokens.text; font-weight: 600; height: 48px; }
-                Button { text: @tr("Printers"); primary: root.page == 0; clicked => { root.page = 0; } }
-                Button { text: @tr("Activity"); primary: root.page == 1; clicked => { root.page = 1; } }
-                Button { text: @tr("Presets"); primary: root.page == 2; clicked => { root.page = 2; } }
+                Button { enabled: !root.modal-open; text: @tr("Printers"); primary: root.page == 0; clicked => { root.page = 0; } }
+                Button { enabled: !root.modal-open; text: @tr("Activity"); primary: root.page == 1; clicked => { root.page = 1; } }
+                Button { enabled: !root.modal-open; text: @tr("Presets"); primary: root.page == 2; clicked => { root.page = 2; } }
                 Rectangle { vertical-stretch: 1; }
                 Text { text: @tr("{} pending · v0.2", root.queued-count); color: Tokens.secondary; font-size: 12px; }
-                Button { text: @tr("Settings"); primary: root.page == 3; clicked => { root.page = 3; } }
+                Button { enabled: !root.modal-open; text: @tr("Settings"); primary: root.page == 3; clicked => { root.page = 3; } }
             }
         }
         VerticalLayout {
@@ -92,15 +93,15 @@ export component AppWindow inherits Window {
                 min-height: 56px; background: Tokens.surface; border-radius: Tokens.radius;
                 HorizontalLayout { padding: 12px; spacing: 12px;
                     Text { text: root.busy ? @tr("Working… Windows may ask for administrator access.") : root.message; color: Tokens.text; wrap: word-wrap; horizontal-stretch: 1; }
-                    Button { enabled: !root.busy; text: @tr("Dismiss"); clicked => { root.message = ""; } }
+                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("Dismiss"); clicked => { root.message = ""; } }
                 }
             }
             if root.page == 0: VerticalLayout {
                 spacing: Tokens.gap;
                 HorizontalLayout { spacing: 8px;
-                    LineEdit { placeholder-text: @tr("Search printers"); text <=> root.search; edited => { root.refresh(); } }
-                    ComboBox { model: [@tr("All printers"), @tr("Active"), @tr("Needs attention")]; current-index <=> root.filter; selected => { root.refresh(); } }
-                    Button { enabled: !root.busy; text: @tr("+ New printer"); primary: true; clicked => { root.edit-id = ""; root.printer-name = ""; root.folder = root.default-folder; root.pattern = "{title}_{date}_{counter}"; root.monthly = false; root.open-after = false; root.message = ""; root.confirm-delete = false; root.editor = true; } }
+                    LineEdit { enabled: !root.modal-open; placeholder-text: @tr("Search printers"); text <=> root.search; edited => { root.refresh(); } }
+                    ComboBox { enabled: !root.modal-open; model: [@tr("All printers"), @tr("Active"), @tr("Needs attention")]; current-index <=> root.filter; selected => { root.refresh(); } }
+                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("+ New printer"); primary: true; clicked => { root.edit-id = ""; root.printer-name = ""; root.folder = root.default-folder; root.pattern = "{title}_{date}_{counter}"; root.monthly = false; root.open-after = false; root.message = ""; root.confirm-delete = false; root.editor = true; } }
                 }
                 if root.printers.length == 0: VerticalLayout { alignment: center;
                     Text { text: @tr("Your PDFs start here"); color: Tokens.text; font-size: 24px; horizontal-alignment: center; }
@@ -108,7 +109,7 @@ export component AppWindow inherits Window {
                 }
                 ListView { for row in root.printer-rows: Rectangle { height: 182px;
                     HorizontalLayout { padding-bottom: Tokens.gap; spacing: Tokens.gap; alignment: start;
-                        for printer in row: PrinterCard { width: root.card-width; horizontal-stretch: 0; printer: printer; busy: root.busy;
+                        for printer in row: PrinterCard { width: root.card-width; horizontal-stretch: 0; printer: printer; busy: root.busy || root.modal-open;
                             details => { root.select-printer(printer.id); }
                             toggle(enabled) => { root.toggle-printer(printer.id, enabled); }
                             test => { root.test-printer(printer.id); }
@@ -118,18 +119,18 @@ export component AppWindow inherits Window {
             }
             if root.page == 1: VerticalLayout { spacing: Tokens.gap;
                 HorizontalLayout { spacing: 8px;
-                    LineEdit { text <=> root.activity-search; placeholder-text: @tr("Search activity"); edited => { root.refresh(); } }
-                    ComboBox { model: [@tr("All activity"), @tr("Saved"), @tr("Failed")]; current-index <=> root.activity-filter; selected => { root.refresh(); } }
-                    Button { enabled: !root.busy; text: @tr("Retry pending"); clicked => { root.retry(); } }
-                    Button { enabled: !root.busy; text: @tr("Clear history"); clicked => { root.confirm-clear = true; } }
+                    LineEdit { enabled: !root.modal-open; text <=> root.activity-search; placeholder-text: @tr("Search activity"); edited => { root.refresh(); } }
+                    ComboBox { enabled: !root.modal-open; model: [@tr("All activity"), @tr("Saved"), @tr("Failed")]; current-index <=> root.activity-filter; selected => { root.refresh(); } }
+                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("Retry pending"); clicked => { root.retry(); } }
+                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("Clear history"); clicked => { root.confirm-clear = true; } }
                 }
                 if root.activity.length == 0: Text { text: @tr("No matching activity. Print a document or try a test page."); color: Tokens.secondary; wrap: word-wrap; }
                 ListView { for item in root.activity: Rectangle { height: 112px; background: Tokens.surface; border-color: Tokens.border; border-width: 1px; border-radius: Tokens.radius;
                     HorizontalLayout { padding: 16px; spacing: 16px;
                         VerticalLayout { Text { text: item.file; color: Tokens.text; font-weight: 600; overflow: elide; } Text { text: item.printer + " · " + item.date; color: Tokens.secondary; overflow: elide; } Text { text: item.status; color: Tokens.secondary; overflow: elide; } }
-                        if !item.failed: Button { text: @tr("Open"); clicked => { root.open-path(item.path); } }
-                        if !item.failed: Button { text: @tr("Show folder"); clicked => { root.show-folder(item.path); } }
-                        if item.failed: Button { enabled: !root.busy; text: @tr("Fix printer"); clicked => { root.select-printer(item.printer-id); } }
+                        if !item.failed: Button { enabled: !root.modal-open; text: @tr("Open"); clicked => { root.open-path(item.path); } }
+                        if !item.failed: Button { enabled: !root.modal-open; text: @tr("Show folder"); clicked => { root.show-folder(item.path); } }
+                        if item.failed: Button { enabled: !root.modal-open && (!root.busy); text: @tr("Fix printer"); clicked => { root.select-printer(item.printer-id); } }
                     }
                 } }
             }
@@ -141,30 +142,31 @@ export component AppWindow inherits Window {
                     HorizontalLayout { padding: 16px; spacing: 16px;
                         Text { text: preset.name; color: Tokens.text; font-size: 17px; font-weight: 600; }
                         Text { text: preset.pattern; color: Tokens.secondary; }
-                        Button { enabled: !root.busy; text: @tr("Use preset"); clicked => { root.edit-id = ""; root.printer-name = preset.name; root.pattern = preset.pattern; root.folder = root.default-folder; root.monthly = false; root.open-after = false; root.confirm-delete = false; root.message = ""; root.editor = true; } }
+                        Button { enabled: !root.modal-open && (!root.busy); text: @tr("Use preset"); clicked => { root.edit-id = ""; root.printer-name = preset.name; root.pattern = preset.pattern; root.folder = root.default-folder; root.monthly = false; root.open-after = false; root.confirm-delete = false; root.message = ""; root.editor = true; } }
                     }
                 }
                 Rectangle { vertical-stretch: 1; }
             }
             if root.page == 3: ScrollView { VerticalLayout { spacing: 20px; padding: 8px;
                 Text { text: @tr("Startup and background printing"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                Switch { enabled: root.native-available; text: @tr("Start with Windows"); checked <=> root.startup; }
-                Switch { enabled: root.native-available; text: @tr("Keep processing in the tray when the window closes"); checked <=> root.keep-tray; }
-                Switch { enabled: root.native-available; text: @tr("Notify me when a PDF is saved"); checked <=> root.notifications; }
+                Switch { enabled: !root.modal-open && (root.native-available); text: @tr("Start with Windows"); checked <=> root.startup; }
+                Switch { enabled: !root.modal-open && (root.native-available); text: @tr("Keep processing in the tray when the window closes"); checked <=> root.keep-tray; }
+                Switch { enabled: !root.modal-open && (root.native-available); text: @tr("Notify me when a PDF is saved"); checked <=> root.notifications; }
                 Text { text: @tr("Appearance"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                ComboBox { model: [@tr("Light"), @tr("Dark"), @tr("Use system setting")]; current-index <=> root.theme; }
+                ComboBox { enabled: !root.modal-open; model: [@tr("Light"), @tr("Dark"), @tr("Use system setting")]; current-index <=> root.theme; }
                 Text { text: @tr("Default output folder"); color: Tokens.text; }
-                HorizontalLayout { spacing: 8px; LineEdit { text <=> root.default-folder; } Button { text: @tr("Browse"); clicked => { root.browse(true); } } }
-                Button { enabled: !root.busy; text: @tr("Save settings"); primary: true; clicked => { root.save-settings(); } }
+                HorizontalLayout { spacing: 8px; LineEdit { enabled: !root.modal-open; text <=> root.default-folder; } Button { enabled: !root.modal-open; text: @tr("Browse"); clicked => { root.browse(true); } } }
+                Button { enabled: !root.modal-open && (!root.busy); text: @tr("Save settings"); primary: true; clicked => { root.save-settings(); } }
                 Text { text: @tr("Backup and recovery"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                HorizontalLayout { spacing: 12px; Button { enabled: !root.busy; text: @tr("Export printers"); clicked => { root.export-backup(); } } Button { enabled: !root.busy; text: @tr("Import printers"); clicked => { root.import-backup(); } } Button { enabled: !root.busy; text: @tr("Retry pending PDFs"); clicked => { root.retry(); } } }
+                HorizontalLayout { spacing: 12px; Button { enabled: !root.modal-open && (!root.busy); text: @tr("Export printers"); clicked => { root.export-backup(); } } Button { enabled: !root.modal-open && (!root.busy); text: @tr("Import printers"); clicked => { root.import-backup(); } } Button { enabled: !root.modal-open && (!root.busy); text: @tr("Retry pending PDFs"); clicked => { root.retry(); } } }
                 Text { text: @tr("Help"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                HorizontalLayout { spacing: 12px; Button { text: @tr("Copy diagnostics"); clicked => { root.copy-diagnostics(); diagnostic-copy.select-all(); diagnostic-copy.copy(); } } Button { text: @tr("Open log folder"); clicked => { root.open-logs(); } } }
+                HorizontalLayout { spacing: 12px; Button { enabled: !root.modal-open; text: @tr("Copy diagnostics"); clicked => { root.copy-diagnostics(); diagnostic-copy.select-all(); diagnostic-copy.copy(); } } Button { enabled: !root.modal-open; text: @tr("Open log folder"); clicked => { root.open-logs(); } } }
                 Text { text: @tr("Virtual Printer Studio 0.2.0\nMade with Slint · https://slint.dev\n\nWindows printers use Microsoft Print to PDF and the built-in Standard TCP/IP monitor over authenticated local LPR. Captured jobs are retained until delivery is acknowledged. Keep the app running in the tray for immediate saving.\n\nReview the Slint licence before distribution."); color: Tokens.secondary; wrap: word-wrap; }
             } }
         }
     }
     if root.welcome || root.editor || root.confirm-clear: Rectangle { background: #00000066;
+        TouchArea { }
         Rectangle { width: 620px; height: root.welcome || root.confirm-delete || root.confirm-clear ? 360px : 640px;
             x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; background: Tokens.surface; border-radius: 12px;
             VerticalLayout { padding: 28px; spacing: 16px;
@@ -187,11 +189,11 @@ export component AppWindow inherits Window {
                 if root.editor && !root.welcome && !root.confirm-delete: VerticalLayout { spacing: 12px;
                     Text { text: root.edit-id == "" ? @tr("New printer") : @tr("Printer details"); color: Tokens.text; font-size: 24px; font-weight: 600; }
                     Text { text: @tr("Printer name"); color: Tokens.text; }
-                    LineEdit { text <=> root.printer-name; placeholder-text: @tr("e.g. Invoices"); }
+                    LineEdit { accessible-label: @tr("Printer name"); text <=> root.printer-name; placeholder-text: @tr("e.g. Invoices"); }
                     Text { text: @tr("Save PDFs to"); color: Tokens.text; }
-                    HorizontalLayout { spacing: 8px; LineEdit { text <=> root.folder; } Button { text: @tr("Browse"); clicked => { root.browse(false); } } }
+                    HorizontalLayout { spacing: 8px; LineEdit { accessible-label: @tr("Output folder"); text <=> root.folder; } Button { text: @tr("Browse"); clicked => { root.browse(false); } } }
                     Text { text: @tr("File name pattern"); color: Tokens.text; }
-                    LineEdit { text <=> root.pattern; }
+                    LineEdit { accessible-label: @tr("File name pattern"); text <=> root.pattern; }
                     Text { text: @tr("Available: {{title}}, {{date}}, {{time}}, {{counter}}\nExisting files are never overwritten."); color: Tokens.secondary; wrap: word-wrap; }
                     Switch { text: @tr("Organise in monthly subfolders"); checked <=> root.monthly; }
                     Switch { text: @tr("Open each PDF after saving"); checked <=> root.open-after; }

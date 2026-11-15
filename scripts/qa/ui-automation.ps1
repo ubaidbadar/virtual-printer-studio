@@ -49,6 +49,7 @@ try {
     Invoke-Button 'Printers'
     Invoke-Button '+ New printer'
     Find-Button 'Save printer'|Out-Null
+    if((Find-Button 'Printers').Current.IsEnabled){throw 'Modal leaves background navigation enabled.'}
     Invoke-Button 'Cancel'
     Find-Button '+ New printer'|Out-Null
     if(!$process.WaitForExit(45000)){throw 'Snapshot fixture did not exit.'}
