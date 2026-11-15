@@ -41,8 +41,9 @@ jobs:
         run: |
           $env:SLINT_BACKEND='winit-software'
           $env:SLINT_SCALE_FACTOR='1'
-          & target/qa-package/virtual-printer-studio.exe --ui-snapshot target/client-evidence/visuals
-          if ($LASTEXITCODE -ne 0) { throw 'UI snapshot export failed.' }
+          $process=Start-Process -FilePath target/qa-package/virtual-printer-studio.exe -ArgumentList @('--ui-snapshot','target/client-evidence/visuals') -PassThru -RedirectStandardError target/client-evidence/visuals.log
+          if (!$process.WaitForExit(120000)) { $process.Kill(); throw 'UI snapshot timed out.' }
+          if ($process.ExitCode -ne 0) { Get-Content target/client-evidence/visuals.log; throw "UI snapshot export failed: $($process.ExitCode)" }
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
