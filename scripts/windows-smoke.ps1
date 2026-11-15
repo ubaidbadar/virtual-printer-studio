@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$App,
-    [string]$TestRoot = (Join-Path $env:TEMP ('VpsSmoke-' + [guid]::NewGuid().ToString()))
+    [string]$TestRoot = (Join-Path $env:TEMP ('VpsSmoke-' + [guid]::NewGuid().ToString())),
+    [switch]$Extended
 )
 $ErrorActionPreference = 'Stop'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -57,10 +58,10 @@ function Configure([string]$action,[bool]$enabled=$true) {
     if (!$reply.ok) { throw "Native action ${action}: $($reply.error)" }
 }
 function Print-Document {
-    param([Parameter(Mandatory=$true)][string]$DocumentTitle)
+    param([Parameter(Mandatory=$true)][string]$DocumentTitle, [int]$Pages=1)
     # Use the same .NET Framework GDI path as the app's native test page. The
     # host PowerShell runtime must not substitute PrintDocument's default title.
-    $payload=@{printer=$name;title=$DocumentTitle}|ConvertTo-Json -Compress
+    $payload=@{printer=$name;title=$DocumentTitle;pages=$Pages}|ConvertTo-Json -Compress
     $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
     $script=@'
 $ErrorActionPreference='Stop'
@@ -72,10 +73,13 @@ if(!$doc.PrinterSettings.IsValid){throw 'Temporary printer was not registered.'}
 $doc.PrintController=New-Object Drawing.Printing.StandardPrintController
 $doc.DocumentName=$r.title
 Write-Output ('Submitting document ['+$doc.DocumentName+']')
+$script:pageIndex=0
+$script:pageCount=[int]$r.pages
 $doc.add_PrintPage({param($sender,$e)
+ $script:pageIndex++
  $font=New-Object Drawing.Font('Arial',16)
  try{$e.Graphics.DrawString('Virtual Printer Studio integration test',$font,[Drawing.Brushes]::Black,72,72)}finally{$font.Dispose()}
- $e.HasMorePages=$false
+ $e.HasMorePages=$script:pageIndex -lt $script:pageCount
 })
 try{$doc.Print()}finally{$doc.Dispose()}
 '@
@@ -101,6 +105,15 @@ $installed=$false
 try {
     Start-Capture
     Configure 'ensure';$installed=$true
+    if ($Extended) {
+        Configure 'ensure' # Repair must be idempotent.
+        $originalName=$name
+        $name+=' renamed'
+        Configure 'ensure'
+        if(Get-Printer -Name $originalName -ErrorAction SilentlyContinue){throw 'Rename left the old printer behind.'}
+        if(!(Get-Printer -Name $name -ErrorAction SilentlyContinue)){throw 'Renamed printer is missing.'}
+        Write-Host 'PASS: idempotent repair and native printer rename.'
+    }
     Write-Host 'Installed PDF printer using the inbox Standard TCP/IP LPR monitor.'
     # An ordinary local process must be unable to inject a print into the receiver.
     $client=New-Object Net.Sockets.TcpClient('127.0.0.1',[int](Read-State).capture_port)
@@ -118,6 +131,12 @@ try {
     Print-Document 'Paused job'
     Start-Sleep -Milliseconds 400
     if ((Read-State).printers[0].count -ne 3) { throw 'A paused printer delivered a new job.' }
+    if ($Extended) {
+        try { Configure 'remove'; throw 'Deletion incorrectly succeeded with a pending job.' }
+        catch { if($_.Exception.Message -notlike '*pending print jobs*'){throw} }
+        if(!(Get-Printer -Name $name -ErrorAction SilentlyContinue)){throw 'Pending-job guard removed the printer.'}
+        Write-Host 'PASS: printer deletion refuses pending Windows jobs.'
+    }
     Configure 'pause' $true
     Wait-Saved 4
     Write-Host 'PASS: multiple PDFs, actual document titles, authenticated capture and pause/resume.'
@@ -137,10 +156,25 @@ try {
     [IO.Directory]::CreateDirectory($output) | Out-Null
     Start-Capture
     Wait-Saved 6
+    $expectedCount=6
+    if ($Extended) {
+        Print-Document 'Multipage report' -Pages 3
+        Wait-Saved 7
+        Print-Document 'Unicode café Ω invoice'
+        Wait-Saved 8
+        if(!(Get-ChildItem -LiteralPath $output -Filter 'Unicode café Ω invoice*.pdf')){throw 'Unicode document title was not preserved.'}
+        Print-Document 'Repeated title'
+        Print-Document 'Repeated title'
+        Wait-Saved 10
+        $expectedCount=10
+        $names=@(Get-ChildItem -LiteralPath $output -Filter '*.pdf').Name
+        if(@($names|Where-Object {$_ -like 'Repeated title*'}).Count -ne 2){throw 'Repeated titles overwrote an output PDF.'}
+        Write-Host 'PASS: multipage printing, Unicode document submission and filename collisions.'
+    }
     Stop-Capture
     $process=Start-Process -FilePath $App -ArgumentList @('--process-pending','--state',('"'+$statePath+'"')) -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw 'Final retry reported undelivered jobs.' }
-    if (@(Get-ChildItem -LiteralPath $TestRoot -Recurse -Filter '*.pdf').Count -ne 6) { throw 'Retry duplicated or lost a delivered PDF.' }
+    if (@(Get-ChildItem -LiteralPath $TestRoot -Recurse -Filter '*.pdf').Count -ne $expectedCount) { throw 'Retry duplicated or lost a delivered PDF.' }
     Write-Host 'PASS: missing-folder recovery, application restart and replay prevention.'
 } finally {
     Stop-Capture

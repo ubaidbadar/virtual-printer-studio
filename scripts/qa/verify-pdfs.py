@@ -14,7 +14,10 @@ assert len(files) == a.expected_count, f'Expected {a.expected_count} PDFs, found
 results = []
 for path in files:
     reader = PdfReader(path, strict=True)
-    assert len(reader.pages) == 1, f'{path}: wrong page count'
+    expected_pages = 3 if path.name.startswith('Multipage report') else 1
+    assert len(reader.pages) == expected_pages, f'{path}: wrong page count'
+    for printed_page in reader.pages:
+        assert 'Virtual Printer Studio integration test' in printed_page.extract_text(), f'{path}: missing page text'
     page = reader.pages[0]
     text = page.extract_text()
     assert 'Virtual Printer Studio integration test' in text, f'{path}: missing printed text: {text!r}'

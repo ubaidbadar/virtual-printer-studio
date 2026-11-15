@@ -35,7 +35,7 @@ jobs:
         run: ./scripts/qa/record-platform.ps1 -OutputDirectory target/client-evidence -ExpectedMachine $env:VPS_EXPECTED_MACHINE
       - name: Real printer acceptance
         shell: pwsh
-        run: ./scripts/windows-smoke.ps1 -App target/qa-package/virtual-printer-studio.exe -TestRoot target/client-evidence/printing
+        run: ./scripts/windows-smoke.ps1 -App target/qa-package/virtual-printer-studio.exe -TestRoot target/client-evidence/printing -Extended
       - name: Render client-area visual states
         shell: pwsh
         run: |
@@ -44,12 +44,23 @@ jobs:
           $process=Start-Process -FilePath target/qa-package/virtual-printer-studio.exe -ArgumentList @('--ui-snapshot','target/client-evidence/visuals') -PassThru -RedirectStandardError target/client-evidence/visuals.log
           if (!$process.WaitForExit(120000)) { $process.Kill(); throw 'UI snapshot timed out.' }
           if ($process.ExitCode -ne 0) { Get-Content target/client-evidence/visuals.log; throw "UI snapshot export failed: $($process.ExitCode)" }
+      - name: Capture 125 and 150 percent DPI
+        shell: pwsh
+        run: |
+          $env:SLINT_BACKEND='winit-software'
+          foreach ($scale in @('1.25','1.5')) {
+            $env:SLINT_SCALE_FACTOR=$scale
+            $directory="target/client-evidence/visuals-scale-$scale"
+            $process=Start-Process -FilePath target/qa-package/virtual-printer-studio.exe -ArgumentList @('--ui-snapshot',$directory) -PassThru -RedirectStandardError "$directory.log"
+            if (!$process.WaitForExit(120000)) { $process.Kill(); throw "DPI $scale timed out." }
+            if ($process.ExitCode -ne 0) { Get-Content "$directory.log"; throw "DPI $scale capture failed." }
+          }
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - run: python -m pip install -r scripts/qa/requirements.txt
       - name: Independently verify generated PDF contents
-        run: python scripts/qa/verify-pdfs.py target/client-evidence/printing
+        run: python scripts/qa/verify-pdfs.py target/client-evidence/printing --expected-count 10
       - name: Measure supplied design differences
         run: python scripts/qa/compare-visuals.py --actual target/client-evidence/visuals --output target/client-evidence/comparison
       - uses: actions/upload-artifact@v4
