@@ -51,6 +51,8 @@ fn refresh(ui: &AppWindow, state: &State) {
                 "Not installed"
             } else if !p.enabled {
                 "Paused"
+            } else if cfg!(windows) && !ui.get_capture_running() {
+                "Receiver offline"
             } else if cfg!(windows) {
                 "Ready"
             } else {
@@ -121,6 +123,8 @@ fn sync_settings(ui: &AppWindow, state: &State) {
     ui.set_startup(state.startup);
 }
 fn apply(ui: &AppWindow, update: Update) {
+    ui.set_capture_running(update.capture_running);
+    ui.set_capture_port(update.capture_port as i32);
     refresh(ui, &update.state);
     ui.set_busy(false);
     ui.set_queued_count(update.queued.min(i32::MAX as usize) as i32);
@@ -156,7 +160,7 @@ fn send(ui: &AppWindow, sender: &Sender<Command>, command: Command) {
 fn main() -> std::process::ExitCode {
     if let Err(error) = run() {
         eprintln!("{error:#}");
-        if !std::env::args().any(|arg| arg == "--process-pending") {
+        if !std::env::args().any(|arg| arg == "--process-pending" || arg == "--serve") {
             rfd::MessageDialog::new()
                 .set_title("Virtual Printer Studio")
                 .set_description(format!("{error:#}"))
@@ -185,9 +189,55 @@ fn run() -> anyhow::Result<()> {
             })
             .transpose()?
             .unwrap_or(path);
-        let delivered = service::process_once(&selected, &platform::spool_root())?;
+        let delivered = service::process_once(
+            &selected,
+            &platform::spool_root(selected.parent().unwrap_or(Path::new("."))),
+        )?;
         println!("Delivered {delivered} PDF(s).");
         return Ok(());
+    }
+    if args.iter().any(|arg| arg == "--serve") {
+        anyhow::ensure!(
+            cfg!(windows),
+            "The Windows capture service requires Windows"
+        );
+        let selected = args
+            .iter()
+            .position(|arg| arg == "--state")
+            .and_then(|i| args.get(i + 1))
+            .map(std::path::PathBuf::from)
+            .unwrap_or(path);
+        let data = selected
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("State path needs a parent folder"))?;
+        std::fs::create_dir_all(data)?;
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(data.join("app.lock"))?;
+        lock.try_lock()
+            .map_err(|e| anyhow::anyhow!("The app is already running: {e}"))?;
+        let (state, _) = load_state(&selected)?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _service = Service::start(
+            selected.clone(),
+            state,
+            platform::spool_root(data),
+            move |update| {
+                let _ = tx.send(update);
+            },
+        )?;
+        loop {
+            let update = rx.recv()?;
+            if !update.capture_running {
+                anyhow::bail!("Capture receiver failed: {}", update.message);
+            }
+            if !update.message.is_empty() {
+                println!("{}", update.message);
+            }
+        }
     }
     let ui = AppWindow::new()?;
     ui.set_native_available(cfg!(windows));
@@ -211,7 +261,7 @@ fn run() -> anyhow::Result<()> {
         ui.set_message(message.into());
     }
     let weak = ui.as_weak();
-    let service = Service::start(path, initial, platform::spool_root(), move |update| {
+    let service = Service::start(path, initial, platform::spool_root(&data), move |update| {
         let _ = weak.upgrade_in_event_loop(move |ui| apply(&ui, update));
     })?;
     macro_rules! bind {($method:ident,|$u:ident,$tx:ident$(,$arg:ident)*|$body:block)=>{{let weak=ui.as_weak();let sender=service.sender.clone();ui.$method(move|$($arg),*|{if let Some($u)=weak.upgrade(){let $tx=&sender;$body}});}};}
@@ -346,7 +396,7 @@ fn run() -> anyhow::Result<()> {
     {
         let weak = ui.as_weak();
         let data = data.clone();
-        ui.on_copy_diagnostics(move||{if let Some(ui)=weak.upgrade(){ui.set_diagnostics(format!("Virtual Printer Studio {}\nOS: {} {}\nState: {}\nCapture: {}\nPrinters: {}\nPending: {}\nMonitor: {}\nLog folder: {}",env!("CARGO_PKG_VERSION"),std::env::consts::OS,std::env::consts::ARCH,data.join("state.json").display(),platform::spool_root().display(),ui.get_printer_count(),ui.get_queued_count(),MONITOR_NAME,data.join("logs").display()).into());ui.set_message("Diagnostics copied.".into());}});
+        ui.on_copy_diagnostics(move||{if let Some(ui)=weak.upgrade(){ui.set_diagnostics(format!("Virtual Printer Studio {}\nOS: {} {}\nState: {}\nCapture: {}\nPrinters: {}\nPending: {}\nMonitor: {}\nLog folder: {}",env!("CARGO_PKG_VERSION"),std::env::consts::OS,std::env::consts::ARCH,data.join("state.json").display(),platform::spool_root(&data).display(),ui.get_printer_count(),ui.get_queued_count(),CAPTURE_BACKEND,data.join("logs").display()).into());ui.set_message("Diagnostics copied.".into());}});
     }
     {
         let weak = ui.as_weak();

@@ -1,91 +1,92 @@
 # Virtual Printer Studio
 
-A Rust / Slint desktop application for Windows 10/11: create named virtual printers, print from other applications, and automatically save each job as a PDF in its configured folder.
+A Rust / Slint desktop app for Windows 10/11. Create named virtual printers, print from other applications, and automatically save each document as a PDF in its configured folder.
 
-Version 0.2 adds a native **Windows port monitor DLL** backed by the built-in **Microsoft Print to PDF** driver. It captures each job independently, including concurrent jobs; there is no shared output filename and no Save As prompt in the application's pipeline.
+Version 0.2 uses **Microsoft Print to PDF** with Windows' built-in **Standard TCP/IP port monitor in LPR mode**. All capture traffic stays on `127.0.0.1`. No custom driver, port-monitor DLL, Ghostscript, or third-party rendering service is installed.
 
-## Windows installation
+## Install and use on Windows
 
-Download the `virtual-printer-studio-windows` artifact from a successful [Desktop checks workflow](../../actions). Extract the **whole package**, keeping `virtual-printer-studio.exe` and `vps_port_monitor.dll` together.
+Download `virtual-printer-studio-windows` from a successful [Desktop checks run](https://github.com/ubaidbadar/virtual-printer-studio/actions/workflows/check.yml). Extract the package.
 
-- Run the executable directly, or run `install.ps1` from an administrator PowerShell terminal to install into Program Files and create a Start menu shortcut.
-- Select **New printer**, choose an existing writable folder, enter a unique name, and select **Save printer**.
-- Approve the Windows administrator prompt to install the native printer. A cancelled or failed installation retains the profile and offers **Install or repair**.
-- Select the named printer from another application's Print dialog. Completed PDFs appear in Activity.
-- Keep the app running in its system tray for immediate delivery. The native monitor captures jobs even when the desktop app is stopped; queued captures are delivered at the next launch.
+1. Run `virtual-printer-studio.exe`, or run `install.ps1` from an administrator PowerShell terminal for a Program Files installation and Start menu shortcut.
+2. Choose **New printer**, enter a unique name, select an existing writable folder, and save.
+3. Approve administrator access to create the Windows printer. Failed or cancelled setup retains the profile; **Install or repair** retries setup.
+4. Choose that printer in another application's Print dialog. PDFs appear in Activity and the configured folder.
+5. Keep the app in its tray for immediate saving. If the app is stopped, the **Windows print queue retains jobs** until the app starts again.
 
-Requires x64 Windows with the Print Spooler and Microsoft Print to PDF feature available. Setup enables the Windows feature when needed; some Windows editions require a restart. The Windows binaries are unsigned. Organizational policies may restrict custom print monitors.
+Requires the Windows Print Spooler and Microsoft Print to PDF feature. Setup enables the feature if missing and explains when Windows needs a restart. The downloadable build is x64 and unsigned.
 
 ## Features
 
-- Native Windows printer creation, rename, repair, pause/resume and removal.
-- Collision-safe output with `{title}`, `{date}`, `{time}`, `{counter}` filename tokens; document titles are sanitized for Windows filenames.
-- Monthly subfolders and optional opening after saving.
-- Separate durable capture per job, atomic publication, SHA-256 delivery receipts, and acknowledgement **after** state has been saved.
-- Event-driven delivery: no periodic inbox polling. Failed jobs remain captured and can be retried after fixing a folder or permission problem.
-- Activity search, saved/failed filters, Open, Show folder, Fix printer, retry, and clear-history confirmation.
-- Working invoice/receipt/contract/report presets.
-- System/light/dark themes, including live Windows appearance changes.
-- Windows startup registration, close-to-tray, native tray menu, single-instance activation, saved-PDF toast notifications with Open / Show folder actions while the app is running.
-- Profile import/export, automatic settings backup recovery, diagnostics copying, and rotating application logs.
+- Windows printer installation, rename, repair, pause/resume and removal.
+- File patterns using `{title}`, `{date}`, `{time}`, `{counter}`. LPR control records preserve the original document title; filenames are sanitized.
+- Existing files are never overwritten. Monthly subfolders and opening after saving are optional.
+- Byte-counted capture, atomic PDF publication, SHA-256 delivery receipts, and durable acknowledgements after state is committed.
+- A repeated transfer of the same LPR control/data is acknowledged without creating another output.
+- Failed deliveries remain captured. Fix the folder and select **Retry pending**, or restart the app.
+- Activity search, saved/failed filters, Open, Show folder, Fix printer, and clear-history confirmation.
+- Working invoice, receipt, contract and report presets.
+- System/light/dark appearance, including live Windows theme changes.
+- Windows startup, close-to-tray, native tray menu and single-instance activation.
+- Saved-PDF notifications with Open / Show folder actions while the app is running.
+- Profile backups, damaged-settings recovery, diagnostics and rotating logs.
 
-Counts are lifetime totals. The visible activity history is capped at 1,000 entries. Clearing history does not remove PDFs or replay acknowledged captures. Imported profiles receive fresh identities and require installation on the destination machine. Settings and PDF files are not included in profile exports.
+Counts are lifetime totals; visible activity is capped at 1,000 rows. Clearing history preserves PDFs and does not replay acknowledged captures. Imported profiles receive fresh identities and require installation on the destination computer.
 
-## Storage and security boundaries
+## Capture and storage
 
-Desktop state is stored under the OS application-data directory. `state.json.bak` retains the previous commit. Corrupt primary settings are preserved and recovered automatically when the backup is readable.
+State is stored in the OS application-data directory. Atomic replacement retains `state.json.bak`. If the primary JSON is damaged, it is preserved and the readable backup is restored.
 
-The privileged monitor stores jobs under `%ProgramData%\VirtualPrinterStudio\jobs\<profile-id>`. Only SYSTEM and administrators can modify those captured files; the configuring Windows account receives read access. A separate `acks\<profile-id>` directory grants that account write access for acknowledgements. The monitor uses the documented spooler impersonation APIs and never writes PDFs directly into a user-writable output folder as SYSTEM. The unprivileged desktop worker performs final delivery.
+A persisted local TCP port is assigned to the receiver. Each installed printer uses its own LPR queue identity at that address. The receiver accepts **only connections owned by the actual Windows Print Spooler PID**, queried through the Service Control Manager and Windows TCP owner table. Printer permissions restrict submission to the configuring account, SYSTEM and administrators.
 
-Acknowledged captures are reclaimed by the monitor when the next job for that printer starts. Incomplete/cancelled captures are retained for diagnosis. Deleting a printer refuses pending Windows jobs and undelivered completed captures. It retains saved PDFs, activity and recovery data.
+Complete captures are stored under the same user's application-data directory, then delivered by the unprivileged worker. Source PDFs are removed after successful delivery and state acknowledgement. Small acknowledgement markers are retained to prevent transport retries from replaying completed jobs. No privileged process writes directly into a user-selected output folder.
 
-Changing native printer state requests elevation. File-name edits and output-folder edits on an already installed printer do not need elevation. Imported profiles are installed explicitly through **Install or repair**.
+Do not run multiple copies against one state file; the app enforces a state lock. If another process occupies the saved receiver port, capture reports an error and Windows retains queued jobs. Close the conflicting process and select Retry pending. Different app states/users receive independent ports.
 
-## Build and verify
+## Build and test
 
-Install current stable Rust and the Windows Visual Studio C++ build tools:
+Install current stable Rust and, on Windows, the Visual Studio C++ build tools:
 
 ```sh
-cargo build --workspace --release --locked
+cargo build --release --locked
 cargo test --workspace --locked
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-The runnable Windows package needs both files from `target/release`: `virtual-printer-studio.exe` and `vps_port_monitor.dll`. Linux development needs fontconfig development libraries and X11/Wayland plus an XDG portal for file dialogs. Linux supports profiles, local test PDFs and the delivery worker; native printer installation and Windows integration are Windows-only.
+Linux development requires fontconfig development libraries and X11/Wayland with an XDG file-dialog portal. Linux supports profiles, local test PDFs and inbox delivery; native printer installation is Windows-only.
 
-The Windows CI integration script installs an isolated temporary printer, prints several real documents, checks PDF delivery and replay prevention, exercises pause/resume and missing-folder recovery, and removes its temporary printer:
+The Windows integration test creates a temporary real printer and exercises normal printing, authenticated capture, multiple PDFs, job titles, pause/resume, printing while the app is stopped, missing-folder recovery, replay prevention and native cleanup:
 
 ```powershell
-./scripts/windows-smoke.ps1 -App target/release/virtual-printer-studio.exe -Monitor target/release/vps_port_monitor.dll
+./scripts/windows-smoke.ps1 -App target/release/virtual-printer-studio.exe
 ```
 
-Run that test in an elevated terminal on a Windows installation with the PDF driver available. It retains test evidence under the printed test folder. CI publishes the executable/DLL package and integration evidence separately. An uploaded package alone is not proof that the integration step passed; check the workflow result.
+Run it from an elevated terminal. CI publishes the Windows package and integration evidence separately; check the **Native Windows print integration** step, not just artifact availability.
 
-For unattended recovery (the desktop app must be stopped):
+For unattended processing, with the desktop app stopped:
 
 ```powershell
 virtual-printer-studio.exe --process-pending
-virtual-printer-studio.exe --process-pending --state C:\path\state.json
+virtual-printer-studio.exe --serve --state C:\path\state.json
 ```
 
-## Structure
+`--serve` runs the same authenticated receiver and delivery worker without the GUI. Stop that process before opening the same state in the desktop app.
 
-- `crates/core`: domain, persistence, naming, PDF delivery and recovery tests; no UI or Windows APIs.
-- `crates/port-monitor`: Windows spooler ABI and durable per-job capture; unsafe code is confined to the Windows adapter.
-- `src/platform`: Windows provisioning, notifications, startup and system appearance.
-- `src/service.rs`: serialized worker, native actions and event-driven delivery.
-- `src/main.rs`: UI composition and callbacks; file picking is asynchronous.
-- `ui/theme`, `ui/components`, `ui/app.slint`: Fluent UI, theme tokens, reusable cards, pages and dialogs.
+## Code layout
 
-The app uses Slint 1.18's native `SystemTrayIcon` rather than adding a second tray toolkit. This supersedes the older tray-library suggestion in the supplied design reference.
+- `crates/core`: domain, persistence, safe naming, PDF delivery, RFC 1179 receiver and portable tests.
+- `src/platform`: Windows provisioning, connection authentication, notifications, startup and appearance.
+- `src/service.rs`: serialized background worker and event-driven delivery; no inbox polling.
+- `src/main.rs`: composition, single-instance handling and asynchronous UI callbacks.
+- `ui/`: Fluent pages, conditional dialogs, theme tokens and virtualized printer rows.
 
-## Uninstall
+Slint 1.18's native `SystemTrayIcon` supplies the tray. Microsoft v4 drivers reject third-party port monitors; see [Microsoft's connectivity documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/print/v4-driver-connectivity-architecture). The earlier experimental DLL route was removed.
 
-Delete installed printers through the app first, then quit it and run the packaged `install.ps1 -Uninstall` from an administrator terminal. Recovery data, user settings and saved PDFs are kept.
+## Uninstall and licensing
 
-## Distribution and licensing
+Delete installed printers through the app, quit it, then run `install.ps1 -Uninstall` in an administrator terminal. User settings, recovery data and saved PDFs are preserved.
 
-No application distribution license has been selected by the owner. Slint has GPLv3, royalty-free and commercial options; review https://slint.dev/license/ before distribution. **Made with Slint** — https://slint.dev.
+No application distribution license has been selected by the owner. Review Slint's GPLv3, royalty-free and commercial options at https://slint.dev/license/ before distribution. **Made with Slint** — https://slint.dev.
 
-See [validation and release limitations](docs/validation.md) for test evidence and dependency maintenance/licensing findings. PDF/A conversion, PDF encryption and document post-processing are outside this version's supported feature set.
+See [validation](docs/validation.md) for evidence and dependency-review findings. PDF/A conversion, password encryption and PDF editing are outside the supported feature set.

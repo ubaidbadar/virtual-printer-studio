@@ -4820,15 +4820,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vps-port-monitor"
-version = "0.2.0"
-dependencies = [
- "serde_json",
- "vps-core",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "vtable"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

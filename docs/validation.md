@@ -4,14 +4,12 @@ Version 0.2 includes the Windows printer implementation; the earlier 0.1 restric
 
 ## Automated evidence
 
-Checked in the Linux development environment with Rust stable 1.100.0 and Slint 1.18.1:
+- Fourteen portable workspace tests cover validation, filename collisions, delivery receipts, interrupted commits, failed-job recovery, acknowledgements, state recovery, filesystem events, LPR framing/retry and UI callbacks.
+- The application cross-compiles against the Windows target and is checked with Clippy for both platforms.
+- The standalone Windows LPR acceptance run [43695921190](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43695921190) installed a real Microsoft PDF printer, captured its PDF and original job title over a configurable Standard TCP/IP LPR port, and removed the printer/port successfully.
+- The full `scripts/windows-smoke.ps1` test additionally covers the actual app receiver's spooler authentication, automatic delivery, multiple documents, pause/resume, stopped-app queuing, failure recovery and cleanup. Check the latest workflow result for complete app validation.
 
-- Twelve workspace tests pass: filename safety, duplicate names, collision-safe PDFs, delivery receipts, interrupted state commits, failed-job recovery, acknowledgement/replay prevention, corrupted-state recovery, filesystem notification delivery, and UI pages/search/filters/callbacks.
-- The Windows application and port monitor are cross-checked against the Windows target; Windows-specific code is also checked with Clippy.
-- CI builds/tests both Linux and Windows and packages the Windows executable plus monitor DLL.
-- `scripts/windows-smoke.ps1` is a real Windows spooler integration test, not a mock. It installs a temporary printer, prints three documents, verifies their PDF output, verifies retry does not replay them, pauses/resumes the printer, checks missing-folder recovery, and removes the printer. Check the current workflow's **Native Windows print integration** result before treating a package as Windows-validated.
-
-Manual Windows/Narrator testing, DPI/multi-monitor acceptance tests, and confirmation of notification activation under the owner's Windows policies still need a Windows desktop. Toast action handlers operate while the desktop process is alive; they are not registered as a separate out-of-process COM notification activator.
+Manual Windows/Narrator, DPI/multi-monitor and notification-activation acceptance testing still needs a desktop. Toast actions operate while the process is alive; no separate out-of-process COM activator is registered.
 
 ## Dependency review
 
@@ -30,8 +28,8 @@ Manual Windows/Narrator testing, DPI/multi-monitor acceptance tests, and confirm
 
 ## Operational boundaries
 
-- x64 Windows only for native installation; Microsoft Print to PDF and the Print Spooler must be available.
-- A first installation may need a Windows feature change/restart; policies may block installation of custom monitors.
-- The desktop process must be running for immediate final-folder delivery. When it is stopped, the monitor retains captured jobs for the next launch.
-- Incomplete/cancelled captures are retained for diagnosis; acknowledged completed captures are reclaimed when the next print starts.
+- Windows Print Spooler and Microsoft Print to PDF must be available. A feature installation can require a restart or be blocked by organizational policy.
+- Immediate saving needs the app/tray receiver. When it is stopped, Windows retains queued print jobs for retry after restart.
+- A receiver-port conflict is reported; close the conflicting process and retry.
+- Completed failed deliveries remain in the local inbox. Acknowledged source payloads are reclaimed; acknowledgement identities are retained for replay protection.
 - PDF/A, password encryption and PDF editing are not exposed as supported controls.

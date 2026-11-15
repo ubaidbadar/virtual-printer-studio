@@ -44,6 +44,7 @@ pub struct State {
     pub notifications: bool,
     pub startup: bool,
     pub theme: i32,
+    pub capture_port: u16,
 }
 impl Default for State {
     fn default() -> Self {
@@ -57,6 +58,7 @@ impl Default for State {
             notifications: true,
             startup: false,
             theme: 2,
+            capture_port: 0,
         }
     }
 }

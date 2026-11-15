@@ -26,6 +26,7 @@ export component AppWindow inherits Window {
     out property <length> card-width: (root.width - 278px - (root.columns - 1) * Tokens.gap) / root.columns;
     changed columns => { root.refresh(); }
     in property <[ActivityView]> activity;
+    in property <bool> capture-running; in property <int> capture-port;
     in property <int> printer-count; in property <int> saved-count; in property <int> queued-count;
     in-out property <int> page: 0;
     in-out property <bool> editor: false;
@@ -159,7 +160,7 @@ export component AppWindow inherits Window {
                 HorizontalLayout { spacing: 12px; Button { enabled: !root.busy; text: @tr("Export printers"); clicked => { root.export-backup(); } } Button { enabled: !root.busy; text: @tr("Import printers"); clicked => { root.import-backup(); } } Button { enabled: !root.busy; text: @tr("Retry pending PDFs"); clicked => { root.retry(); } } }
                 Text { text: @tr("Help"); color: Tokens.text; font-size: 18px; font-weight: 600; }
                 HorizontalLayout { spacing: 12px; Button { text: @tr("Copy diagnostics"); clicked => { root.copy-diagnostics(); diagnostic-copy.select-all(); diagnostic-copy.copy(); } } Button { text: @tr("Open log folder"); clicked => { root.open-logs(); } } }
-                Text { text: @tr("Virtual Printer Studio 0.2.0\nMade with Slint · https://slint.dev\n\nWindows printers use the Microsoft Print to PDF driver and the included VPS port monitor. Captured jobs are retained until delivery is acknowledged. Keep the app running in the tray for immediate saving.\n\nReview the Slint licence before distribution."); color: Tokens.secondary; wrap: word-wrap; }
+                Text { text: @tr("Virtual Printer Studio 0.2.0\nMade with Slint · https://slint.dev\n\nWindows printers use Microsoft Print to PDF and the built-in Standard TCP/IP monitor over authenticated local LPR. Captured jobs are retained until delivery is acknowledged. Keep the app running in the tray for immediate saving.\n\nReview the Slint licence before distribution."); color: Tokens.secondary; wrap: word-wrap; }
             } }
         }
     }
@@ -169,7 +170,7 @@ export component AppWindow inherits Window {
             VerticalLayout { padding: 28px; spacing: 16px;
                 if root.welcome: VerticalLayout { spacing: 20px;
                     Text { text: @tr("Welcome to Virtual Printer Studio"); color: Tokens.text; font-size: 26px; wrap: word-wrap; }
-                    Text { text: @tr("Create a printer and choose where its PDFs go. On Windows, approve administrator access once to install it, then choose that printer from any application's Print dialog.\n\nKeep the app in the tray to save captured documents immediately. If the app is stopped, captured jobs wait for the next launch."); color: Tokens.secondary; wrap: word-wrap; }
+                    Text { text: @tr("Create a printer and choose where its PDFs go. On Windows, approve administrator access once to install it, then choose that printer from any application's Print dialog.\n\nKeep the app in the tray to save captured documents immediately. If the app is stopped, Windows keeps queued jobs until the app starts again."); color: Tokens.secondary; wrap: word-wrap; }
                     Button { enabled: !root.busy; text: @tr("Get started"); primary: true; clicked => { root.dismiss-welcome(); } }
                 }
                 if root.confirm-clear && !root.welcome: VerticalLayout { spacing: 20px;

@@ -2,11 +2,11 @@ use crate::{domain::*, platform};
 use anyhow::{Context, Result, ensure};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Sender},
     },
@@ -16,6 +16,7 @@ use std::{
 #[derive(Clone)]
 pub enum Command {
     Refresh,
+    CaptureError(String),
     Scan,
     Retry,
     SaveProfile {
@@ -52,6 +53,8 @@ pub struct Update {
     pub close_editor: bool,
     pub sync_settings: bool,
     pub queued: usize,
+    pub capture_running: bool,
+    pub capture_port: u16,
 }
 pub struct Service {
     pub sender: Sender<Command>,
@@ -83,6 +86,10 @@ impl Service {
             let mut watched=HashSet::new();let mut state=initial;
             let data=path.parent().unwrap_or(Path::new(".")).to_owned();let log=data.join("logs/app.log");
             let mut failures=HashSet::new();
+            let routes=Arc::new(RwLock::new(profile_routes(&state).unwrap_or_default()));
+            let mut capture=match start_capture(&mut state,&path,root.clone(),routes.clone(),tx_actions.clone(),pending.clone()) {
+                Ok(server)=>server,Err(e)=>{let _=tx_actions.send(Command::CaptureError(format!("{e:#}")));None}
+            };
             while let Ok(command)=rx.recv(){
                 if matches!(command,Command::Shutdown){break;}
                 let sync_settings=matches!(&command,Command::Settings{..});
@@ -91,8 +98,12 @@ impl Service {
                 let result=(||->Result<String>{
                     match command {
                         Command::Refresh=>Ok(String::new()),
+                        Command::CaptureError(message)=>Err(anyhow::anyhow!(message)),
                         Command::Scan|Command::Retry=>{
-                            if matches!(command,Command::Retry){failures.clear();}
+                            if matches!(command,Command::Retry){
+                                failures.clear();
+                                if capture.is_none(){capture=start_capture(&mut state,&path,root.clone(),routes.clone(),tx_actions.clone(),pending.clone())?;}
+                            }
                             pending.store(false,Ordering::Release);
                             let delivered=scan(&mut state,&path,&root,&data,&mut failures,&log)?;
                             Ok(if delivered>0{format!("Saved {delivered} PDF(s).")}else if matches!(command,Command::Retry){"Retried all pending jobs. Check Activity for any remaining problems.".into()}else{String::new()})
@@ -117,7 +128,8 @@ impl Service {
                             // or failed final commit cannot leave an unmanageable orphan queue.
                             commit(&mut state,&path,next)?;
                             if cfg!(windows) && native_change {
-                                match platform::native_action("ensure",&printer){
+                                if capture.is_none(){edit=Some(printer.clone());anyhow::bail!("The PDF receiver is offline. Select Retry pending, then Install or repair this printer.");}
+                                match platform::native_action("ensure",&printer,state.capture_port){
                                     Ok(())=>{let p=find_mut(&mut state,&printer.id)?;p.installed=true;p.last_error.clear();save(&path,&state)?;},
                                     Err(e)=>{find_mut(&mut state,&printer.id)?.last_error=e.to_string();save(&path,&state)?;edit=Some(find(&state,&printer.id)?.clone());return Err(e);}
                                 }
@@ -127,17 +139,17 @@ impl Service {
                         }
                         Command::Repair(id)=>{
                             let p=find(&state,&id)?.clone();
-                            match platform::native_action("ensure",&p){Ok(())=>{let p=find_mut(&mut state,&id)?;p.installed=true;p.last_error.clear();save(&path,&state)?;failures.clear();Ok("Windows printer repaired. Pending PDFs will be retried.".into())},Err(e)=>{find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;Err(e)}}
+                            match platform::native_action("ensure",&p,state.capture_port){Ok(())=>{let p=find_mut(&mut state,&id)?;p.installed=true;p.last_error.clear();save(&path,&state)?;failures.clear();Ok("Windows printer repaired. Pending PDFs will be retried.".into())},Err(e)=>{find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;Err(e)}}
                         }
                         Command::Toggle(id,enabled)=>{
                             let mut next=state.clone();find_mut(&mut next,&id)?.enabled=enabled;commit(&mut state,&path,next)?;
                             let p=find(&state,&id)?.clone();
-                            if cfg!(windows) && p.installed&& let Err(e)=platform::native_action("pause",&p){find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;return Err(e);}
+                            if cfg!(windows) && p.installed&& let Err(e)=platform::native_action("pause",&p,state.capture_port){find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;return Err(e);}
                             failures.clear();Ok(if enabled{"Printer resumed."}else{"Printer paused. Queued documents are retained."}.into())
                         }
                         Command::Delete(id)=>{
                             let printer=find(&state,&id)?.clone();ensure!(pending_for(&root,&id)==0,"This printer has captured jobs awaiting delivery. Resume or retry them before deleting it.");
-                            if cfg!(windows) {platform::native_action("remove",&printer)?;}
+                            if cfg!(windows) {platform::native_action("remove",&printer,state.capture_port)?;}
                             let mut next=state.clone();next.printers.retain(|p|p.id!=id);commit(&mut state,&path,next)?;close=true;Ok("Printer removed. Saved PDFs and activity were kept.".into())
                         }
                         Command::Test(id)=>{
@@ -164,11 +176,12 @@ impl Service {
                         Command::Shutdown=>unreachable!(),
                     }
                 })();
+                if let Ok(updated)=profile_routes(&state) && let Ok(mut map)=routes.write(){*map=updated;}
                 let message=match result{Ok(message)=>message,Err(e)=>{let message=format!("{e:#}");platform::log(&log,&message);message}};
                 let mut new_watch=false;
-                if let Some(watcher)=watcher.as_mut(){for p in &state.printers{let dir=root.join("jobs").join(&p.id);if dir.is_dir() && !watched.contains(&p.id){match watcher.watch(&dir,RecursiveMode::Recursive){Ok(())=>{watched.insert(p.id.clone());new_watch=true;},Err(e)=>platform::log(&log,&format!("Cannot watch capture folder: {e}"))}}}}
+                if let Some(watcher)=watcher.as_mut(){for p in &state.printers{let dir=root.join("jobs").join(&p.id);let _=fs::create_dir_all(&dir);let _=fs::create_dir_all(root.join("acks").join(&p.id));if dir.is_dir() && !watched.contains(&p.id){match watcher.watch(&dir,RecursiveMode::Recursive){Ok(())=>{watched.insert(p.id.clone());new_watch=true;},Err(e)=>platform::log(&log,&format!("Cannot watch capture folder: {e}"))}}}}
                 let queued=state.printers.iter().map(|p|pending_for(&root,&p.id)).sum();
-                sink(Update{state:state.clone(),message,editor:edit,close_editor:close,sync_settings,queued});
+                sink(Update{state:state.clone(),message,editor:edit,close_editor:close,sync_settings,queued,capture_running:capture.is_some(),capture_port:state.capture_port});
                 if new_watch || scan_after {let _=tx_actions.send(Command::Scan);}
             }
         })?;
@@ -244,31 +257,6 @@ fn scan(
 ) -> Result<usize> {
     let mut delivered = 0;
     for printer in state.printers.clone() {
-        if valid_id(&printer.id) {
-            // Once the monitor has reclaimed a captured job, its acknowledgement
-            // and desktop delivery receipt are no longer needed for replay safety.
-            if let Ok(acks) = fs::read_dir(root.join("acks").join(&printer.id)) {
-                for ack in acks.flatten() {
-                    let name = ack.file_name().to_string_lossy().to_string();
-                    if let Some(id) = name.strip_suffix(".ack").filter(|id| valid_id(id)) {
-                        let jobs = root.join("jobs").join(&printer.id);
-                        if jobs
-                            .join(format!("{id}.ready"))
-                            .try_exists()
-                            .is_ok_and(|found| !found)
-                            && jobs
-                                .join(format!("{id}.partial"))
-                                .try_exists()
-                                .is_ok_and(|found| !found)
-                        {
-                            let _ = fs::remove_file(ack.path());
-                            let _ =
-                                fs::remove_file(data.join("deliveries").join(format!("{id}.json")));
-                        }
-                    }
-                }
-            }
-        }
         if !valid_id(&printer.id) || !printer.enabled {
             continue;
         }
@@ -292,8 +280,15 @@ fn scan(
                 .join(&printer.id)
                 .join(format!("{id}.ack"))
                 .is_file()
-                || failures.contains(id)
             {
+                reclaim(
+                    &entry.path(),
+                    &data.join("deliveries").join(format!("{id}.json")),
+                    log,
+                );
+                continue;
+            }
+            if failures.contains(id) {
                 continue;
             }
             if state
@@ -301,8 +296,13 @@ fn scan(
                 .iter()
                 .any(|a| a.job_id == id && a.status == "Saved")
             {
-                if let Err(e) = acknowledge(root, &printer.id, id) {
-                    platform::log(log, &format!("Could not acknowledge {id}: {e}"));
+                match acknowledge(root, &printer.id, id) {
+                    Ok(()) => reclaim(
+                        &entry.path(),
+                        &data.join("deliveries").join(format!("{id}.json")),
+                        log,
+                    ),
+                    Err(e) => platform::log(log, &format!("Could not acknowledge {id}: {e}")),
                 }
                 continue;
             }
@@ -351,8 +351,16 @@ fn scan(
                         next.activity.push(record);
                     }
                     commit(state, state_path, next)?;
-                    if let Err(e) = acknowledge(root, &printer.id, &job.id) {
-                        platform::log(log, &format!("PDF saved but acknowledgement failed: {e}"));
+                    match acknowledge(root, &printer.id, &job.id) {
+                        Ok(()) => reclaim(
+                            &entry.path(),
+                            &data.join("deliveries").join(format!("{}.json", job.id)),
+                            log,
+                        ),
+                        Err(e) => platform::log(
+                            log,
+                            &format!("PDF saved but acknowledgement failed: {e}"),
+                        ),
                     }
                     if printer.open_after
                         && let Err(e) = open::that(&destination)
@@ -610,5 +618,65 @@ mod recovery_and_watcher_tests {
             }
         }
         drop(service);
+    }
+}
+
+fn profile_routes(state: &State) -> Result<HashMap<String, String>> {
+    let mut routes = HashMap::new();
+    for p in &state.printers {
+        ensure!(
+            routes.insert(lpr_queue(&p.id)?, p.id.clone()).is_none(),
+            "Two printer identities map to the same LPR queue"
+        );
+    }
+    Ok(routes)
+}
+fn start_capture(
+    state: &mut State,
+    path: &Path,
+    root: PathBuf,
+    routes: Arc<RwLock<HashMap<String, String>>>,
+    tx: Sender<Command>,
+    pending: Arc<AtomicBool>,
+) -> Result<Option<vps_core::lpr::CaptureServer>> {
+    if !cfg!(windows) {
+        return Ok(None);
+    }
+    let server = vps_core::lpr::CaptureServer::start(
+        std::net::SocketAddr::from(([127, 0, 0, 1], state.capture_port)),
+        root,
+        routes,
+        Arc::new(platform::authorize_capture),
+        Arc::new(move |event| match event {
+            Ok(_) => {
+                if !pending.swap(true, Ordering::AcqRel) {
+                    let _ = tx.send(Command::Scan);
+                }
+            }
+            Err(e) => {
+                let _ = tx.send(Command::CaptureError(format!("PDF capture: {e:#}")));
+            }
+        }),
+    )?;
+    if state.capture_port != server.address().port() {
+        let mut next = state.clone();
+        next.capture_port = server.address().port();
+        commit(state, path, next)?;
+    }
+    Ok(Some(server))
+}
+
+fn reclaim(capture: &Path, receipt: &Path, log: &Path) {
+    match fs::remove_dir_all(capture) {
+        Ok(()) => {
+            let _ = fs::remove_file(receipt);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let _ = fs::remove_file(receipt);
+        }
+        Err(e) => platform::log(
+            log,
+            &format!("PDF saved; capture cleanup can be retried: {e}"),
+        ),
     }
 }

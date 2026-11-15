@@ -29,7 +29,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path target/package -Force
-          Copy-Item target/release/virtual-printer-studio.exe,target/release/vps_port_monitor.dll,scripts/install.ps1,README.md -Destination target/package
+          Copy-Item target/release/virtual-printer-studio.exe,scripts/install.ps1,README.md -Destination target/package
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
@@ -38,7 +38,7 @@ jobs:
       - name: Native Windows print integration
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/windows-smoke.ps1 -App target/release/virtual-printer-studio.exe -Monitor target/release/vps_port_monitor.dll -TestRoot target/windows-smoke
+        run: ./scripts/windows-smoke.ps1 -App target/release/virtual-printer-studio.exe -TestRoot target/windows-smoke
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Windows'
         with:

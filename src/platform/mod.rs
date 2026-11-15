@@ -6,7 +6,7 @@ mod windows;
 #[cfg(windows)]
 pub use windows::*;
 #[cfg(not(windows))]
-pub fn native_action(_action: &str, _printer: &Printer) -> Result<()> {
+pub fn native_action(_action: &str, _printer: &Printer, _port: u16) -> Result<()> {
     anyhow::bail!(
         "Windows printer installation is available on Windows 10/11. Profiles and PDF delivery can be used here."
     )
@@ -27,11 +27,12 @@ pub fn system_dark() -> bool {
 pub fn notify_saved(_path: &Path) -> Result<()> {
     Ok(())
 }
+pub fn spool_root(data: &Path) -> PathBuf {
+    data.join("capture")
+}
 #[cfg(not(windows))]
-pub fn spool_root() -> PathBuf {
-    std::env::var_os("VPS_SPOOL_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("VirtualPrinterStudio"))
+pub fn authorize_capture(_stream: &std::net::TcpStream) -> Result<()> {
+    anyhow::bail!("Windows spooler authentication is unavailable on this platform")
 }
 pub fn show_in_folder(path: &Path) -> Result<()> {
     #[cfg(windows)]

@@ -23,7 +23,7 @@ fn powershell(script: &str) -> Result<std::process::Output> {
 fn literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
-pub fn native_action(action: &str, printer: &Printer) -> Result<()> {
+pub fn native_action(action: &str, printer: &Printer, port: u16) -> Result<()> {
     ensure!(
         ["ensure", "pause", "remove"].contains(&action),
         "Unknown Windows printer action"
@@ -38,19 +38,7 @@ pub fn native_action(action: &str, printer: &Printer) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let script_path = temp.path().join("configure-printer.ps1");
     let result_path = temp.path().join("result.json");
-    let exe = std::env::current_exe()?;
-    let dll_path = exe.with_file_name(vps_core::MONITOR_DLL);
-    let _locked_dll = if action == "ensure" && dll_path.exists() {
-        Some(
-            OpenOptions::new()
-                .read(true)
-                .share_mode(1)
-                .open(&dll_path)?,
-        )
-    } else {
-        None
-    };
-    let request = serde_json::json!({"action":action,"id":printer.id,"name":printer.name,"enabled":printer.enabled,"sid":sid,"dll":exe.with_file_name(vps_core::MONITOR_DLL),"result":result_path});
+    let request = serde_json::json!({"action":action,"id":printer.id,"name":printer.name,"enabled":printer.enabled,"sid":sid,"port":port,"queue":vps_core::lpr_queue(&printer.id)?,"result":result_path});
     let script = include_str!("native.ps1").replace(
         "__REQUEST__",
         &STANDARD.encode(serde_json::to_vec(&request)?),
@@ -110,10 +98,6 @@ pub fn print_test(printer: &Printer) -> Result<()> {
         String::from_utf8_lossy(&output.stderr)
     );
     Ok(())
-}
-pub fn spool_root() -> PathBuf {
-    PathBuf::from(std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into()))
-        .join("VirtualPrinterStudio")
 }
 pub fn startup(enabled: bool) -> Result<()> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -284,4 +268,123 @@ fn register_notification_shortcut() -> Result<()> {
         persist.Save(&HSTRING::from(shortcut.to_string_lossy().as_ref()), true)?;
     }
     Ok(())
+}
+
+/// Authorize the loopback peer by comparing its owning PID with the SCM's
+/// actual Print Spooler PID. A different local account cannot inject PDFs just
+/// by connecting to a loopback socket or naming its process spoolsv.exe.
+pub fn authorize_capture(stream: &std::net::TcpStream) -> Result<()> {
+    use windows_sys::Win32::{
+        Foundation::ERROR_INSUFFICIENT_BUFFER,
+        NetworkManagement::IpHelper::{
+            GetExtendedTcpTable, MIB_TCPROW_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
+        },
+        System::Services::{
+            CloseServiceHandle, OpenSCManagerW, OpenServiceW, QueryServiceStatusEx,
+            SC_MANAGER_CONNECT, SC_STATUS_PROCESS_INFO, SERVICE_QUERY_STATUS,
+            SERVICE_STATUS_PROCESS,
+        },
+    };
+    let peer = stream.peer_addr()?;
+    let local = stream.local_addr()?;
+    ensure!(
+        peer.ip().is_loopback(),
+        "Capture accepts only local Windows spooler connections"
+    );
+    // Safety: all handles/buffers are locally owned and valid through each API;
+    // SCM grants unprivileged users service-query access, not service control.
+    let spooler_pid = unsafe {
+        let manager = OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT);
+        ensure!(
+            !manager.is_null(),
+            "Cannot query the Windows service manager"
+        );
+        let name: Vec<u16> = "Spooler".encode_utf16().chain(Some(0)).collect();
+        let service = OpenServiceW(manager, name.as_ptr(), SERVICE_QUERY_STATUS);
+        if service.is_null() {
+            CloseServiceHandle(manager);
+            anyhow::bail!("Cannot query the Windows Print Spooler");
+        }
+        let mut status: SERVICE_STATUS_PROCESS = std::mem::zeroed();
+        let mut needed = 0;
+        let ok = QueryServiceStatusEx(
+            service,
+            SC_STATUS_PROCESS_INFO,
+            (&mut status as *mut SERVICE_STATUS_PROCESS).cast(),
+            std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32,
+            &mut needed,
+        );
+        CloseServiceHandle(service);
+        CloseServiceHandle(manager);
+        ensure!(
+            ok != 0 && status.dwProcessId != 0,
+            "The Windows Print Spooler is not running"
+        );
+        status.dwProcessId
+    };
+    let mut needed = 0u32;
+    unsafe {
+        GetExtendedTcpTable(
+            std::ptr::null_mut(),
+            &mut needed,
+            0,
+            2,
+            TCP_TABLE_OWNER_PID_ALL,
+            0,
+        )
+    };
+    for _ in 0..4 {
+        let mut buffer = vec![0u32; (needed as usize).div_ceil(4).max(1)];
+        let mut bytes = (buffer.len() * 4) as u32;
+        let result = unsafe {
+            GetExtendedTcpTable(
+                buffer.as_mut_ptr().cast(),
+                &mut bytes,
+                0,
+                2,
+                TCP_TABLE_OWNER_PID_ALL,
+                0,
+            )
+        };
+        if result == ERROR_INSUFFICIENT_BUFFER {
+            needed = bytes;
+            continue;
+        }
+        ensure!(
+            result == 0,
+            "Cannot authenticate the local print connection (Windows error {result})"
+        );
+        let count = buffer[0] as usize;
+        let row_size = std::mem::size_of::<MIB_TCPROW_OWNER_PID>();
+        ensure!(
+            4 + count * row_size <= buffer.len() * 4,
+            "Windows returned an incomplete TCP owner table"
+        );
+        for i in 0..count {
+            let row = unsafe {
+                std::ptr::read_unaligned(
+                    buffer
+                        .as_ptr()
+                        .cast::<u8>()
+                        .add(4 + i * row_size)
+                        .cast::<MIB_TCPROW_OWNER_PID>(),
+                )
+            };
+            if u16::from_be(row.dwLocalPort as u16) == peer.port()
+                && u16::from_be(row.dwRemotePort as u16) == local.port()
+                && row.dwLocalAddr.to_ne_bytes() == [127, 0, 0, 1]
+                && row.dwRemoteAddr.to_ne_bytes() == [127, 0, 0, 1]
+            {
+                ensure!(
+                    row.dwOwningPid == spooler_pid,
+                    "Only the Windows Print Spooler may submit captured PDFs"
+                );
+                return Ok(());
+            }
+        }
+        anyhow::bail!("The print connection could not be matched to the Windows Print Spooler");
+    }
+    anyhow::bail!(
+        "The Windows connection table changed while authenticating the printer; retry the print job"
+    )
 }
