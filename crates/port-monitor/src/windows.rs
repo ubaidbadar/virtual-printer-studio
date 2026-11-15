@@ -355,9 +355,9 @@ unsafe extern "system" fn delete_port(
 unsafe fn put_string(buffer: *mut u8, offset: &mut usize, text: &str) -> PWSTR {
     let utf: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
     // Safety: EnumPorts computed a sufficient output buffer including all strings.
+    *offset -= utf.len() * 2;
     let location = unsafe { buffer.add(*offset).cast::<u16>() };
     unsafe { ptr::copy_nonoverlapping(utf.as_ptr(), location, utf.len()) };
-    *offset += utf.len() * 2;
     location
 }
 unsafe extern "system" fn enum_ports(
@@ -397,7 +397,10 @@ unsafe extern "system" fn enum_ports(
         if (len as usize) < bytes || (buffer.is_null() && bytes > 0) {
             return Err(ERROR_INSUFFICIENT_BUFFER);
         }
-        let mut offset = item * ports.len();
+        // The spooler merges monitors into one buffer, advancing the front by
+        // structure count and reserving strings at the end. Packing strings
+        // immediately after our structures lets the next monitor overwrite them.
+        let mut offset = len as usize & !1;
         for (i, name) in ports.iter().enumerate() {
             let pname = unsafe { put_string(buffer, &mut offset, name) };
             if level == 1 {

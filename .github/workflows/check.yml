@@ -1,5 +1,8 @@
 name: Desktop checks
 on: [push, pull_request, workflow_dispatch]
+concurrency:
+  group: desktop-checks-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     strategy:
