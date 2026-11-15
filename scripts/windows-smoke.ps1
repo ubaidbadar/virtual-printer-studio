@@ -7,6 +7,7 @@ $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run this integration test from an elevated PowerShell terminal.' }
 $App = (Resolve-Path -LiteralPath $App).Path
+$TestRoot = Join-Path $TestRoot ('run-' + [guid]::NewGuid().ToString())
 [IO.Directory]::CreateDirectory($TestRoot) | Out-Null
 $TestRoot = (Resolve-Path -LiteralPath $TestRoot).Path
 $id = [guid]::NewGuid().ToString()

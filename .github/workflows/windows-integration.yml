@@ -16,6 +16,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          shared-key: desktop-v2-static
       - name: Build current application
         run: cargo build --release --locked
       - name: Real Windows printer integration

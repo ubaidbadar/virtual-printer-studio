@@ -14,7 +14,7 @@ Download `virtual-printer-studio-windows` from a successful [Desktop checks run]
 4. Choose that printer in another application's Print dialog. PDFs appear in Activity and the configured folder.
 5. Keep the app in its tray for immediate saving. If the app is stopped, the **Windows print queue retains jobs** until the app starts again.
 
-Requires the Windows Print Spooler and Microsoft Print to PDF feature. Setup enables the feature if missing and explains when Windows needs a restart. The downloadable build is x64 and unsigned.
+Requires the Windows Print Spooler and Microsoft Print to PDF feature. Setup enables the feature if missing and explains when Windows needs a restart. The downloadable build is x64 and unsigned. Its C runtime is statically linked; a separate VC++ redistributable is not required.
 
 ## Features
 

@@ -7,7 +7,8 @@ Version 0.2 includes the Windows printer implementation; the earlier 0.1 restric
 - Fourteen portable workspace tests cover validation, filename collisions, delivery receipts, interrupted commits, failed-job recovery, acknowledgements, state recovery, filesystem events, LPR framing/retry and UI callbacks.
 - The application cross-compiles against the Windows target and is checked with Clippy for both platforms.
 - The standalone Windows LPR acceptance run [43695921190](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43695921190) installed a real Microsoft PDF printer, captured its PDF and original job title over a configurable Standard TCP/IP LPR port, and removed the printer/port successfully.
-- The full `scripts/windows-smoke.ps1` test additionally covers the actual app receiver's spooler authentication, automatic delivery, multiple documents, pause/resume, stopped-app queuing, failure recovery and cleanup. Check the latest workflow result for complete app validation.
+- The full application run [43753732917](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43753732917) passed on Windows and Linux. Its native test delivered six real PDFs, preserved document titles, rejected a non-spooler connection, paused/resumed printing, recovered a print submitted while the app was stopped, recovered a missing output folder after restart, verified no duplicate output, and removed the temporary printer and port.
+- Windows builds statically link the C runtime so the package does not require a separate VC++ redistributable. Each integration run uses an isolated evidence subdirectory.
 
 Manual Windows/Narrator, DPI/multi-monitor and notification-activation acceptance testing still needs a desktop. Toast actions operate while the process is alive; no separate out-of-process COM activator is registered.
 

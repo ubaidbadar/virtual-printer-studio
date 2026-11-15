@@ -18,6 +18,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          shared-key: desktop-v2-static
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo fmt --all --check
@@ -28,6 +29,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          if (Test-Path target/package) { Remove-Item target/package -Recurse -Force }
           New-Item -ItemType Directory -Path target/package -Force
           Copy-Item target/release/virtual-printer-studio.exe,scripts/install.ps1,README.md -Destination target/package
       - uses: actions/upload-artifact@v4
