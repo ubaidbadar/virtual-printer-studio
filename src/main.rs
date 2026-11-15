@@ -547,10 +547,52 @@ mod ui_tests {
             ui.show().expect("show");
             ui.hide().expect("hide");
         }
-        let called = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
-        let result = called.clone();
-        ui.on_select_printer(move |id| *result.borrow_mut() = id.to_string());
-        ui.invoke_select_printer("one".into());
-        assert_eq!(&*called.borrow(), "one");
+        // Exercise the actual widgets' accessibility actions, rather than
+        // invoking application callbacks directly.
+        use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+        let activate = |label: &str| {
+            ElementHandle::find_by_accessible_label(&ui, label)
+                .find(|element| element.accessible_role() == Some(AccessibleRole::Button))
+                .unwrap_or_else(|| panic!("Missing button: {label}"))
+                .invoke_accessible_default_action();
+        };
+        ui.show().expect("show");
+        for (label, page) in [
+            ("Activity", 1),
+            ("Presets", 2),
+            ("Settings", 3),
+            ("Printers", 0),
+        ] {
+            activate(label);
+            assert_eq!(ui.get_page(), page, "{label} navigation");
+        }
+        ui.set_default_folder("C:\\PDFs".into());
+        activate("+ New printer");
+        assert!(ui.get_editor());
+        assert!(ui.get_edit_id().is_empty());
+        assert_eq!(ui.get_folder(), "C:\\PDFs");
+        ui.set_printer_name("Invoices".into());
+        let saved = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let received = saved.clone();
+        ui.on_save_printer(move |id, name, folder, pattern, monthly, open_after| {
+            *received.borrow_mut() = Some((id, name, folder, pattern, monthly, open_after));
+        });
+        activate("Save printer");
+        let saved_value = saved.borrow();
+        let (_, name, folder, pattern, monthly, open_after) =
+            saved_value.as_ref().expect("save callback");
+        assert_eq!(name, "Invoices");
+        assert_eq!(folder, "C:\\PDFs");
+        assert_eq!(pattern, "{title}_{date}_{counter}");
+        assert!(!monthly && !open_after);
+        activate("Cancel");
+        assert!(!ui.get_editor());
+        activate("Presets");
+        activate("Use preset");
+        assert!(ui.get_editor());
+        assert_eq!(ui.get_printer_name(), "Invoices");
+        assert_eq!(ui.get_pattern(), "Invoice_{date}_{counter}");
+        activate("Cancel");
+        ui.hide().expect("hide");
     }
 }

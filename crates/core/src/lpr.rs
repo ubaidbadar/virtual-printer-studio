@@ -366,7 +366,159 @@ mod tests {
             .expect("PDF"),
             b"%PDF-1.4\nexample\n%%EOF\n"
         );
+        // After delivery has reclaimed the PDF, the durable acknowledgement must
+        // still suppress a Windows retry across a receiver restart.
+        fs::write(
+            dir.path()
+                .join("acks/profile1")
+                .join(format!("{}.ack", job.id)),
+            b"saved",
+        )
+        .expect("ack marker");
+        fs::remove_dir_all(
+            dir.path()
+                .join("jobs/profile1")
+                .join(format!("{}.ready", job.id)),
+        )
+        .expect("reclaim payload");
+        send_job(server.address(), true);
+        assert_eq!(
+            fs::read_dir(dir.path().join("jobs/profile1"))
+                .expect("jobs")
+                .count(),
+            0
+        );
         drop(server);
+    }
+    #[test]
+    fn invalid_and_interrupted_transfers_never_publish_a_job() {
+        let control = b"Hlocalhost\nPowner\nJTest\n";
+        let control_packet = || {
+            let mut bytes = format!("\x02{} cfA001host\n", control.len()).into_bytes();
+            bytes.extend(control);
+            bytes.push(0);
+            bytes
+        };
+        let cases = [
+            ("unknown queue", b"\x02unowned\n".to_vec(), false),
+            ("unsupported command", b"\x05profile1\n".to_vec(), false),
+            (
+                "oversized command",
+                [b"\x02profile1\n".as_slice(), &[b'x'; 4097]].concat(),
+                false,
+            ),
+            (
+                "oversized control",
+                b"\x02profile1\n\x0265537 cfA001host\n".to_vec(),
+                false,
+            ),
+            (
+                "oversized PDF",
+                b"\x02profile1\n\x0310737418241 dfA001host\n".to_vec(),
+                false,
+            ),
+            (
+                "incomplete control",
+                b"\x02profile1\n\x02100 cfA001host\nshort".to_vec(),
+                false,
+            ),
+            (
+                "interrupted PDF",
+                b"\x02profile1\n\x03100 dfA001host\n%PDF-short".to_vec(),
+                false,
+            ),
+            (
+                "duplicate control",
+                [
+                    b"\x02profile1\n".to_vec(),
+                    control_packet(),
+                    control_packet(),
+                ]
+                .concat(),
+                false,
+            ),
+            (
+                "non-PDF payload",
+                [
+                    b"\x02profile1\n".to_vec(),
+                    control_packet(),
+                    b"\x035 dfA001host\nhello\0".to_vec(),
+                ]
+                .concat(),
+                false,
+            ),
+            (
+                "negative file terminator",
+                b"\x02profile1\n\x035 dfA001host\n%PDF-\x01".to_vec(),
+                false,
+            ),
+            ("abort", b"\x02profile1\n\x01\n".to_vec(), true),
+        ];
+        for (name, packet, aborted) in cases {
+            let dir = tempfile::tempdir().expect("folder");
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            let mut client =
+                TcpStream::connect(listener.local_addr().expect("address")).expect("connect");
+            client
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("timeout");
+            let root = dir.path().to_owned();
+            let receiver = thread::spawn(move || {
+                let (stream, _) = listener.accept().expect("accept");
+                receive(
+                    stream,
+                    &root,
+                    &RwLock::new(HashMap::from([("profile1".into(), "profile1".into())])),
+                )
+            });
+            client.write_all(&packet).expect("packet");
+            client
+                .shutdown(std::net::Shutdown::Write)
+                .expect("end transfer");
+            let _ = client.read_to_end(&mut Vec::new());
+            let result = receiver.join().expect("receiver");
+            if aborted {
+                assert!(matches!(result, Ok(None)), "{name}: {result:?}");
+            } else {
+                assert!(result.is_err(), "{name} was accepted");
+            }
+            let jobs = dir.path().join("jobs/profile1");
+            assert!(
+                !jobs.exists() || fs::read_dir(jobs).expect("jobs").next().is_none(),
+                "{name} left a capture behind"
+            );
+        }
+    }
+    #[test]
+    fn authorization_failure_happens_before_acknowledgement_or_disk_write() {
+        let dir = tempfile::tempdir().expect("folder");
+        let (tx, rx) = mpsc::channel();
+        let server = CaptureServer::start(
+            "127.0.0.1:0".parse().expect("address"),
+            dir.path().into(),
+            Arc::new(RwLock::new(HashMap::from([(
+                "profile1".into(),
+                "profile1".into(),
+            )]))),
+            Arc::new(|_| anyhow::bail!("not the spooler")),
+            Arc::new(move |event| {
+                let _ = tx.send(event);
+            }),
+        )
+        .expect("server");
+        let mut client = TcpStream::connect(server.address()).expect("connect");
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("timeout");
+        let _ = client.write_all(b"\x02profile1\n");
+        let mut reply = [255];
+        assert!(!matches!(client.read(&mut reply), Ok(1)) || reply != [0]);
+        assert!(
+            rx.recv_timeout(Duration::from_secs(5))
+                .expect("event")
+                .is_err()
+        );
+        assert!(fs::read_dir(dir.path()).expect("root").next().is_none());
     }
     #[test]
     fn refuses_non_loopback_listeners() {

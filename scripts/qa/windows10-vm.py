@@ -86,7 +86,7 @@ kvm=Path('/dev/kvm').exists()
 metadata={'hypervisor':'QEMU','acceleration':'KVM' if kvm else 'TCG','official_image':'Windows 10 Enterprise LTSC evaluation 19044.1288','iso_sha256':subprocess.check_output(['sha256sum',str(w/'windows.iso')],text=True).split()[0]}
 (w/'vm-platform.json').write_text(json.dumps(metadata,indent=2))
 print(json.dumps(metadata),flush=True)
-args=['qemu-system-x86_64','-machine','q35,accel='+('kvm' if kvm else 'tcg'),'-cpu','host' if kvm else 'max','-m','6G','-smp','4','-drive',f'file={w}/disk.qcow2,format=qcow2,if=ide','-drive',f'file={w}/windows.iso,media=cdrom,readonly=on','-drive',f'file={w}/payload.iso,media=cdrom,readonly=on','-boot','order=c','-boot','once=d','-device','e1000,netdev=net0','-netdev','user,id=net0','-display','none','-vnc','127.0.0.1:1','-monitor',f'unix:{w}/monitor.sock,server,nowait','-no-reboot']
+args=['qemu-system-x86_64','-machine','q35,accel='+('kvm' if kvm else 'tcg'),'-cpu','host' if kvm else 'max','-m','6G','-smp','4','-drive',f'file={w}/disk.qcow2,format=qcow2,if=ide','-drive',f'file={w}/windows.iso,media=cdrom,readonly=on','-drive',f'file={w}/payload.iso,media=cdrom,readonly=on','-boot','order=c,once=d','-device','e1000,netdev=net0','-netdev','user,id=net0','-display','none','-vnc','127.0.0.1:1','-monitor',f'unix:{w}/monitor.sock,server,nowait','-no-reboot']
 # Allow Windows setup restarts; disk becomes the default boot device after initial ISO boot.
 args.remove('-no-reboot')
 proc=subprocess.Popen(args,stdout=(w/'qemu.log').open('w'),stderr=subprocess.STDOUT)
