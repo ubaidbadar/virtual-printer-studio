@@ -19,6 +19,7 @@ use std::{
 };
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub type Authorize = Arc<dyn Fn(&TcpStream) -> Result<()> + Send + Sync>;
+pub type TitleResolver = Arc<dyn Fn(&str) -> Result<Option<String>> + Send + Sync>;
 pub type Event = Arc<dyn Fn(Result<JobMetadata>) + Send + Sync>;
 pub struct CaptureServer {
     address: SocketAddr,
@@ -32,6 +33,23 @@ impl CaptureServer {
         profiles: Arc<RwLock<HashMap<String, String>>>,
         authorize: Authorize,
         event: Event,
+    ) -> Result<Self> {
+        Self::start_with_title_resolver(
+            address,
+            root,
+            profiles,
+            authorize,
+            event,
+            Arc::new(|_| Ok(None)),
+        )
+    }
+    pub fn start_with_title_resolver(
+        address: SocketAddr,
+        root: PathBuf,
+        profiles: Arc<RwLock<HashMap<String, String>>>,
+        authorize: Authorize,
+        event: Event,
+        title_resolver: TitleResolver,
     ) -> Result<Self> {
         ensure!(
             address.ip().is_loopback(),
@@ -69,14 +87,15 @@ impl CaptureServer {
                         )));
                         continue;
                     }
-                    let (root, profiles, event, active) = (
+                    let (root, profiles, event, active, title_resolver) = (
                         root.clone(),
                         profiles.clone(),
                         event.clone(),
                         active.clone(),
+                        title_resolver.clone(),
                     );
                     thread::spawn(move || {
-                        let result = receive(stream, &root, &profiles);
+                        let result = receive(stream, &root, &profiles, &title_resolver);
                         if let Err(e) = &result {
                             event(Err(anyhow::anyhow!("{e:#}")));
                         } else if let Ok(Some(job)) = result {
@@ -124,6 +143,7 @@ fn receive(
     stream: TcpStream,
     root: &Path,
     profiles: &RwLock<HashMap<String, String>>,
+    title_resolver: &TitleResolver,
 ) -> Result<Option<JobMetadata>> {
     stream.set_read_timeout(Some(Duration::from_secs(120)))?;
     stream.set_write_timeout(Some(Duration::from_secs(120)))?;
@@ -250,6 +270,10 @@ fn receive(
                     .chars()
                     .take(512)
                     .collect();
+                // The inbox Windows LPR monitor encodes J/N using the system
+                // ANSI code page. Read the live spooler title before final ACK,
+                // while the authoritative Unicode job still exists.
+                let title = title_resolver(&id)?.unwrap_or(title);
                 let job = JobMetadata {
                     id: job_id.clone(),
                     printer_id: id.clone(),
@@ -469,6 +493,7 @@ mod tests {
                     stream,
                     &root,
                     &RwLock::new(HashMap::from([("profile1".into(), "profile1".into())])),
+                    &(Arc::new(|_: &str| Ok(None)) as TitleResolver),
                 )
             });
             client.write_all(&packet).expect("packet");
@@ -519,6 +544,44 @@ mod tests {
                 .is_err()
         );
         assert!(fs::read_dir(dir.path()).expect("root").next().is_none());
+    }
+    #[test]
+    fn authoritative_unicode_title_overrides_lossy_transport_metadata() {
+        let dir = tempfile::tempdir().expect("folder");
+        let (tx, rx) = mpsc::channel();
+        let server = CaptureServer::start_with_title_resolver(
+            "127.0.0.1:0".parse().expect("address"),
+            dir.path().into(),
+            Arc::new(RwLock::new(HashMap::from([(
+                "profile1".into(),
+                "profile1".into(),
+            )]))),
+            Arc::new(|_| Ok(())),
+            Arc::new(move |event| {
+                let _ = tx.send(event);
+            }),
+            Arc::new(|id| {
+                assert_eq!(id, "profile1");
+                Ok(Some("Unicode café Ω invoice".into()))
+            }),
+        )
+        .expect("server");
+        send_job(server.address(), false);
+        let job = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("event")
+            .expect("capture");
+        assert_eq!(job.title, "Unicode café Ω invoice");
+        let stored: JobMetadata = serde_json::from_slice(
+            &fs::read(
+                dir.path()
+                    .join("jobs/profile1")
+                    .join(format!("{}.ready/job.json", job.id)),
+            )
+            .expect("metadata"),
+        )
+        .expect("JSON");
+        assert_eq!(stored.title, job.title);
     }
     #[test]
     fn refuses_non_loopback_listeners() {

@@ -65,3 +65,8 @@ pub fn log(path: &Path, message: &str) {
         let _ = writeln!(file, "{} {message}", time::OffsetDateTime::now_utc());
     }
 }
+
+#[cfg(not(windows))]
+pub fn capture_title(_id: &str) -> Result<Option<String>> {
+    Ok(None)
+}

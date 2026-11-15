@@ -642,7 +642,7 @@ fn start_capture(
     if !cfg!(windows) {
         return Ok(None);
     }
-    let server = vps_core::lpr::CaptureServer::start(
+    let server = vps_core::lpr::CaptureServer::start_with_title_resolver(
         std::net::SocketAddr::from(([127, 0, 0, 1], state.capture_port)),
         root,
         routes,
@@ -657,6 +657,7 @@ fn start_capture(
                 let _ = tx.send(Command::CaptureError(format!("PDF capture: {e:#}")));
             }
         }),
+        Arc::new(platform::capture_title),
     )?;
     if state.capture_port != server.address().port() {
         let mut next = state.clone();

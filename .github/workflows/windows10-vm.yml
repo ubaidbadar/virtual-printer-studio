@@ -45,7 +45,7 @@ jobs:
         run: python -c "import json; r=json.load(open('target/win10-evidence/result.json',encoding='utf-8-sig')); print(r); assert r['exit_code']==0"
       - run: pip install -r scripts/qa/requirements.txt
       - name: Independently verify generated PDF contents
-        run: python scripts/qa/verify-pdfs.py target/win10-evidence/printing
+        run: python scripts/qa/verify-pdfs.py target/win10-evidence/printing --expected-count 10
       - name: Measure reference pixel differences
         run: python scripts/qa/compare-visuals.py --actual target/win10-evidence/visuals --output target/win10-evidence/comparison
       - uses: actions/upload-artifact@v4

@@ -388,3 +388,120 @@ pub fn authorize_capture(stream: &std::net::TcpStream) -> Result<()> {
         "The Windows connection table changed while authenticating the printer; retry the print job"
     )
 }
+
+/// Preserve the live Unicode document title before acknowledging the ANSI LPR
+/// transfer. Each application printer owns one Standard TCP/IP port, which
+/// serializes its transmitted jobs. Never guess if multiple jobs are printing.
+pub fn capture_title(id: &str) -> Result<Option<String>> {
+    use windows_sys::Win32::Graphics::Printing::*;
+    fn enumerate(
+        mut call: impl FnMut(*mut u8, u32, &mut u32, &mut u32) -> i32,
+    ) -> Result<(Vec<usize>, u32)> {
+        let (mut needed, mut count) = (0, 0);
+        call(std::ptr::null_mut(), 0, &mut needed, &mut count);
+        for _ in 0..3 {
+            if needed == 0 {
+                return Ok((Vec::new(), 0));
+            }
+            ensure!(needed <= 16 * 1024 * 1024, "Spooler metadata is too large");
+            let capacity = needed;
+            let mut buffer =
+                vec![0usize; (capacity as usize).div_ceil(std::mem::size_of::<usize>())];
+            if call(
+                buffer.as_mut_ptr().cast(),
+                capacity,
+                &mut needed,
+                &mut count,
+            ) != 0
+            {
+                return Ok((buffer, count));
+            }
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(122) {
+                return Err(error.into());
+            }
+        }
+        anyhow::bail!("Spooler metadata changed repeatedly; Windows will retry")
+    }
+    fn text(pointer: *const u16, buffer: &[usize]) -> Result<String> {
+        if pointer.is_null() {
+            return Ok(String::new());
+        }
+        let start = buffer.as_ptr() as usize;
+        let end = start + std::mem::size_of_val(buffer);
+        let position = pointer as usize;
+        ensure!(
+            position >= start && position < end && position.is_multiple_of(2),
+            "Invalid spooler string"
+        );
+        // Windows returns all strings inside this caller-owned, aligned buffer.
+        let words = unsafe { std::slice::from_raw_parts(pointer, (end - position) / 2) };
+        let length = words
+            .iter()
+            .position(|&c| c == 0)
+            .ok_or_else(|| anyhow::anyhow!("Unterminated spooler string"))?;
+        Ok(String::from_utf16_lossy(&words[..length]))
+    }
+    let (printers, count) = enumerate(|p, size, needed, count| unsafe {
+        EnumPrintersW(
+            PRINTER_ENUM_LOCAL,
+            std::ptr::null(),
+            5,
+            p,
+            size,
+            needed,
+            count,
+        )
+    })?;
+    ensure!(
+        count as usize
+            <= std::mem::size_of_val(printers.as_slice()) / std::mem::size_of::<PRINTER_INFO_5W>(),
+        "Invalid printer metadata count"
+    );
+    let port = format!("VPS_{id}");
+    for index in 0..count as usize {
+        // Aligned storage and returned count were checked above.
+        let printer = unsafe { &*printers.as_ptr().cast::<PRINTER_INFO_5W>().add(index) };
+        if text(printer.pPortName, &printers)? != port {
+            continue;
+        }
+        let mut handle = PRINTER_HANDLE::default();
+        if unsafe { OpenPrinterW(printer.pPrinterName, &mut handle, std::ptr::null()) } == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        struct Guard(PRINTER_HANDLE);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                unsafe {
+                    ClosePrinter(self.0);
+                }
+            }
+        }
+        let _guard = Guard(handle);
+        let (jobs, count) = enumerate(|p, size, needed, count| unsafe {
+            EnumJobsW(handle, 0, u32::MAX, 1, p, size, needed, count)
+        })?;
+        ensure!(
+            count as usize
+                <= std::mem::size_of_val(jobs.as_slice()) / std::mem::size_of::<JOB_INFO_1W>(),
+            "Invalid job metadata count"
+        );
+        let mut title = None;
+        for index in 0..count as usize {
+            let job = unsafe { &*jobs.as_ptr().cast::<JOB_INFO_1W>().add(index) };
+            if job.Status & JOB_STATUS_PRINTING == 0 {
+                continue;
+            }
+            ensure!(
+                title.is_none(),
+                "Multiple jobs are printing on one capture port; Windows will retry"
+            );
+            let value = text(job.pDocument, &jobs)?;
+            if !value.is_empty() {
+                title = Some(value.chars().take(512).collect());
+            }
+        }
+        return Ok(title);
+    }
+    Ok(None)
+}

@@ -59,6 +59,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r scripts/qa/requirements.txt
+      - name: Verify scaled rendering dimensions
+        run: python scripts/qa/verify-dpi.py target/client-evidence
       - name: Independently verify generated PDF contents
         run: python scripts/qa/verify-pdfs.py target/client-evidence/printing --expected-count 10
       - name: Measure supplied design differences

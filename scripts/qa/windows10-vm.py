@@ -35,7 +35,7 @@ $code=0
 try {
     & C:\vps\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File C:\vps\scripts\qa\record-platform.ps1 -OutputDirectory $evidence -ExpectedMachine windows-10-x64-vm
     if($LASTEXITCODE -ne 0){throw 'Platform check failed'}
-    & C:\vps\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File C:\vps\scripts\windows-smoke.ps1 -App C:\vps\app\virtual-printer-studio.exe -TestRoot "$evidence\printing" *> "$evidence\printing.log"
+    & C:\vps\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File C:\vps\scripts\windows-smoke.ps1 -App C:\vps\app\virtual-printer-studio.exe -TestRoot "$evidence\printing" -Extended *> "$evidence\printing.log"
     if($LASTEXITCODE -ne 0){throw 'Real printer test failed'}
     $env:SLINT_BACKEND='winit-software'
     $env:SLINT_SCALE_FACTOR='1'
