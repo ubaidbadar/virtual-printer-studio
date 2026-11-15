@@ -6,6 +6,7 @@ Checked in a Linux build environment on 2026-11-15 using Rust stable 1.100.0 and
 - `cargo fmt --check`: passes.
 - `cargo clippy --locked --all-targets -- -D warnings`: passes.
 - `cargo build --locked`: passes.
+- `cargo audit`: exits successfully for the locked dependencies; the stricter `cargo deny` findings below remain unresolved.
 - Graphical smoke check under Xvfb: launch, populated printer view, click Test PDF, state persisted after restart. The output is readable by the independent Poppler `pdftotext` parser.
 - Linux/Windows build workflow is provided; Windows behavior has not been manually tested in this environment.
 
