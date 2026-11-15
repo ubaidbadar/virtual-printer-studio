@@ -190,3 +190,60 @@ pub fn lpr_queue(id: &str) -> Result<String> {
         .map(|b| format!("{b:02x}"))
         .collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn fixture() -> (tempfile::TempDir, Printer, JobMetadata, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().expect("temp folder");
+        let source = dir.path().join("input.pdf");
+        fs::write(&source, b"%PDF-1.4\ncontent\n%%EOF").expect("PDF");
+        let output = dir.path().join("out");
+        fs::create_dir(&output).expect("output");
+        let p = Printer {
+            id: "profile1".into(),
+            name: "Invoices".into(),
+            folder: output,
+            pattern: "{title}_{counter}".into(),
+            enabled: true,
+            ..Printer::default()
+        };
+        let j = JobMetadata {
+            id: "job1".into(),
+            printer_id: p.id.clone(),
+            title: "Q4: revenue / report".into(),
+            created_unix: 1700000000,
+        };
+        let receipt = dir.path().join("receipts/job1.json");
+        (dir, p, j, source, receipt)
+    }
+    #[test]
+    fn retries_are_idempotent_and_collisions_survive() {
+        let (_dir, p, j, source, receipt) = fixture();
+        let first = deliver_pdf(&p, &j, &source, &receipt).expect("delivery");
+        assert_eq!(
+            first,
+            deliver_pdf(&p, &j, &source, &receipt).expect("retry")
+        );
+        fs::write(&first, b"different user's file").expect("replace");
+        let second = deliver_pdf(&p, &j, &source, &receipt).expect("collision");
+        assert_ne!(first, second);
+        assert_eq!(fs::read(first).expect("original"), b"different user's file");
+    }
+    #[test]
+    fn rejects_non_pdf_and_cross_profile_jobs() {
+        let (_dir, p, mut j, source, receipt) = fixture();
+        j.printer_id = "other".into();
+        assert!(deliver_pdf(&p, &j, &source, &receipt).is_err());
+        j.printer_id = p.id.clone();
+        fs::write(&source, b"not a PDF").expect("input");
+        assert!(deliver_pdf(&p, &j, &source, &receipt).is_err());
+    }
+    #[test]
+    fn sanitizes_titles_and_rejects_path_identifiers() {
+        assert_eq!(safe_part("CON"), "_CON");
+        assert_eq!(safe_part("../a:b\\c"), ".._a_b_c");
+        assert!(!valid_id("../escape"));
+        assert!(!valid_id(""));
+    }
+}

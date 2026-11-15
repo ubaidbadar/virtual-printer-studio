@@ -23,7 +23,8 @@ public class VpsSpooler {
 '@
     $ownerRoot = 'HKLM:\SOFTWARE\VirtualPrinterStudio\Owners'
     if (!(Test-Path -LiteralPath $ownerRoot)) { New-Item -Path $ownerRoot -Force | Out-Null }
-    $owner = Get-ItemPropertyValue -LiteralPath $ownerRoot -Name $r.id -ErrorAction SilentlyContinue
+    $owners = Get-Item -LiteralPath $ownerRoot
+    $owner = $owners.GetValue([string]$r.id, $null)
     if ($owner -and $owner -ne $r.sid) { throw 'This printer belongs to another Windows account.' }
     $printer = Get-Printer | Where-Object PortName -eq $portName | Select-Object -First 1
     if ($r.action -eq 'remove') {
@@ -67,7 +68,7 @@ public class VpsSpooler {
             # Only this account, SYSTEM and administrators may submit jobs.
             $permissions = 'O:BAG:SYD:(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x00020008;;;' + $r.sid + ')'
             Set-Printer -Name $printer.Name -PermissionSDDL $permissions
-            Set-ItemProperty -LiteralPath $ownerRoot -Name $r.id -Value $r.sid
+            $owners.SetValue([string]$r.id,[string]$r.sid,[Microsoft.Win32.RegistryValueKind]::String)
         }
         if (!$printer) { throw 'The Windows printer is missing. Select Install or repair.' }
         $stage = 'Applying pause or resume'
