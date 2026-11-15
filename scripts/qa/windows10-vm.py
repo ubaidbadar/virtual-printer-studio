@@ -37,11 +37,13 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Platform check failed'}
     & C:\vps\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File C:\vps\scripts\windows-smoke.ps1 -App C:\vps\app\virtual-printer-studio.exe -TestRoot "$evidence\printing" -Extended *> "$evidence\printing.log"
     if($LASTEXITCODE -ne 0){throw 'Real printer test failed'}
+    . C:\vps\scripts\qa\process-exit.ps1
     $env:SLINT_BACKEND='winit-software'
     $env:SLINT_SCALE_FACTOR='1'
     $process=Start-Process -FilePath C:\vps\app\virtual-printer-studio.exe -ArgumentList @('--ui-snapshot',"$evidence\visuals") -PassThru -RedirectStandardError "$evidence\visuals.log"
-    if(!$process.WaitForExit(120000)){ $process.Kill(); throw 'Snapshot timed out' }
-    if($process.ExitCode -ne 0){throw 'UI snapshot failed'}
+    $nativeHandle=$process.Handle
+    $snapshotExitCode=Wait-VpsProcess $process $nativeHandle 120000
+    if($snapshotExitCode -ne 0){throw 'UI snapshot failed'}
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\vps\scripts\qa\ui-automation.ps1 -App C:\vps\app\virtual-printer-studio.exe -OutputDirectory "$evidence\ui-automation" *> "$evidence\ui-automation.log"
     if($LASTEXITCODE -ne 0){throw 'Native UI Automation failed'}
     $env:VPS_DISPOSABLE_TEST_VM='1'

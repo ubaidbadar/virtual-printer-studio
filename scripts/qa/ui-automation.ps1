@@ -2,6 +2,7 @@ param([Parameter(Mandatory=$true)][string]$App,[Parameter(Mandatory=$true)][stri
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+. (Join-Path $PSScriptRoot 'process-exit.ps1')
 [IO.Directory]::CreateDirectory($OutputDirectory)|Out-Null
 $App=(Resolve-Path -LiteralPath $App).Path
 $OutputDirectory=(Resolve-Path -LiteralPath $OutputDirectory).Path
@@ -9,6 +10,7 @@ $env:VPS_QA_HOLD_SECONDS='30'
 $env:SLINT_BACKEND='winit-software'
 $env:SLINT_SCALE_FACTOR='1'
 $process=Start-Process -FilePath $App -ArgumentList @('--ui-snapshot',('"'+(Join-Path $OutputDirectory 'scenes')+'"')) -PassThru -RedirectStandardError (Join-Path $OutputDirectory 'stderr.log')
+$nativeHandle=$process.Handle
 $results=New-Object Collections.Generic.List[string]
 try {
     $deadline=(Get-Date).AddSeconds(15)
@@ -52,8 +54,8 @@ try {
     if((Find-Button 'Printers').Current.IsEnabled){throw 'Modal leaves background navigation enabled.'}
     Invoke-Button 'Cancel'
     Find-Button '+ New printer'|Out-Null
-    if(!$process.WaitForExit(45000)){throw 'Snapshot fixture did not exit.'}
-    if($process.ExitCode -ne 0){throw "Application failed: $($process.ExitCode)"}
+    $exitCode=Wait-VpsProcess $process $nativeHandle 45000
+    if($exitCode -ne 0){throw "Application failed: $exitCode"}
     $results|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $OutputDirectory 'results.json') -Encoding UTF8
     Write-Host 'PASS: native Windows UI Automation exposes and operates navigation and the new-printer dialog.'
 } finally {
