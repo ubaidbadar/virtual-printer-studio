@@ -1,0 +1,15 @@
+name: Windows LPR acceptance
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/lpr-probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lpr-probe-evidence
+          path: target/lpr-probe/
