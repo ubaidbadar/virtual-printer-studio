@@ -155,6 +155,8 @@ public class VpsSpooler {
     exit 0
 } catch {
     $failure = $_
+    $monitorLog = Join-Path $root 'monitor.log'
+    if (Test-Path -LiteralPath $monitorLog) { Get-Content -LiteralPath $monitorLog -Tail 25 | Write-Output }
     Write-Output ($failure | Format-List * -Force | Out-String)
     Write-Output ("Setup failed at ${stage}: " + $_.Exception.Message + "`n" + $_.ScriptStackTrace)
     if ($r -and $r.result) { @{ok=$false; error=("${stage}: " + $failure.Exception.Message)} | ConvertTo-Json -Compress | Set-Content -LiteralPath $r.result -Encoding UTF8 }

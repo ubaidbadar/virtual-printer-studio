@@ -244,6 +244,31 @@ fn scan(
 ) -> Result<usize> {
     let mut delivered = 0;
     for printer in state.printers.clone() {
+        if valid_id(&printer.id) {
+            // Once the monitor has reclaimed a captured job, its acknowledgement
+            // and desktop delivery receipt are no longer needed for replay safety.
+            if let Ok(acks) = fs::read_dir(root.join("acks").join(&printer.id)) {
+                for ack in acks.flatten() {
+                    let name = ack.file_name().to_string_lossy().to_string();
+                    if let Some(id) = name.strip_suffix(".ack").filter(|id| valid_id(id)) {
+                        let jobs = root.join("jobs").join(&printer.id);
+                        if jobs
+                            .join(format!("{id}.ready"))
+                            .try_exists()
+                            .is_ok_and(|found| !found)
+                            && jobs
+                                .join(format!("{id}.partial"))
+                                .try_exists()
+                                .is_ok_and(|found| !found)
+                        {
+                            let _ = fs::remove_file(ack.path());
+                            let _ =
+                                fs::remove_file(data.join("deliveries").join(format!("{id}.json")));
+                        }
+                    }
+                }
+            }
+        }
         if !valid_id(&printer.id) || !printer.enabled {
             continue;
         }

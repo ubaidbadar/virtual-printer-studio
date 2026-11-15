@@ -67,6 +67,15 @@ function Deliver([bool]$shouldSucceed=$true) {
 }
 $installed = $false
 try {
+    Start-Service Spooler
+    Get-PrinterDriver | Select-Object Name,PrinterEnvironment,MajorVersion | Format-Table | Out-String | Write-Host
+    $controlName = 'VPS native control ' + $id.Substring(0,8)
+    $base = Get-Printer | Where-Object DriverName -eq 'Microsoft Print To PDF' | Select-Object -First 1
+    $controlPort = if ($base) { $base.PortName } else { 'PORTPROMPT:' }
+    try {
+        Add-Printer -Name $controlName -DriverName 'Microsoft Print To PDF' -PortName $controlPort -ErrorAction Stop
+        Write-Host "Control queue created using $controlPort"
+    } finally { if (Get-Printer -Name $controlName -ErrorAction SilentlyContinue) { Remove-Printer -Name $controlName } }
     Configure 'ensure'; $installed = $true
     Write-Host 'Installed temporary native printer.'
     foreach ($title in @('Invoice A','Invoice B','Invoice C')) { Print-Document $title }

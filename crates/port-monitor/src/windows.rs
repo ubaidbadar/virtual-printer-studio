@@ -23,7 +23,13 @@ use windows_sys::{
 
 type MResult<T> = Result<T, u32>;
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+#[cfg(test)]
+static TEST_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 fn root() -> PathBuf {
+    #[cfg(test)]
+    if let Some(root) = TEST_ROOT.get() {
+        return root.clone();
+    }
     PathBuf::from(std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into()))
         .join("VirtualPrinterStudio")
 }
@@ -223,7 +229,7 @@ unsafe extern "system" fn start_doc(
         let metadata = JobMetadata {
             id: unique,
             printer_id: port.id.clone(),
-            title,
+            title: title.chars().take(512).collect(),
             created_unix: now.as_secs() as i64,
         };
         let mut meta = OpenOptions::new()
@@ -536,4 +542,86 @@ pub unsafe extern "system" fn InitializePrintMonitor2(
     }
     unsafe { *out = ptr::without_provenance_mut(1) };
     ptr::addr_of!(TABLE.0).cast_mut()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn enumeration_survives_other_monitors_writing_their_structures() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let folder = std::env::temp_dir().join(format!("vps-enum-{}-{unique}", std::process::id()));
+        fs::create_dir_all(folder.join("ports")).expect("ports");
+        TEST_ROOT.set(folder.clone()).expect("test root");
+        let expected = "VPS_test-profile";
+        fs::write(folder.join("ports").join(expected), b"").expect("port marker");
+        for level in [1, 2] {
+            let mut needed = 0;
+            let mut returned = 0;
+            // Safety: valid output pointers, with no output buffer for size query.
+            assert_eq!(
+                unsafe {
+                    enum_ports(
+                        ptr::null_mut(),
+                        ptr::null(),
+                        level,
+                        ptr::null_mut(),
+                        0,
+                        &mut needed,
+                        &mut returned,
+                    )
+                },
+                0
+            );
+            assert!(needed > 0);
+            let mut storage = vec![0u64; 256];
+            let bytes = storage.len() * size_of::<u64>();
+            let buffer = storage.as_mut_ptr().cast::<u8>();
+            // Safety: storage is aligned, writable and bytes long.
+            assert_eq!(
+                unsafe {
+                    enum_ports(
+                        ptr::null_mut(),
+                        ptr::null(),
+                        level,
+                        buffer,
+                        bytes as u32,
+                        &mut needed,
+                        &mut returned,
+                    )
+                },
+                1
+            );
+            assert_eq!(returned, 1);
+            let item = if level == 1 {
+                size_of::<PORT_INFO_1W>()
+            } else {
+                size_of::<PORT_INFO_2W>()
+            };
+            // Simulate the spooler's next monitor occupying the next structures
+            // at the front of the shared buffer. Our strings must remain intact.
+            unsafe { ptr::write_bytes(buffer.add(item), 0x42, 256) };
+            let name = if level == 1 {
+                unsafe { ptr::read_unaligned(buffer.cast::<PORT_INFO_1W>()).pName }
+            } else {
+                unsafe { ptr::read_unaligned(buffer.cast::<PORT_INFO_2W>()).pPortName }
+            };
+            assert_eq!(unsafe { wide(name) }.expect("UTF-16 port name"), expected);
+            if level == 2 {
+                let info = unsafe { ptr::read_unaligned(buffer.cast::<PORT_INFO_2W>()) };
+                assert_eq!(
+                    unsafe { wide(info.pMonitorName) }.expect("monitor"),
+                    MONITOR_NAME
+                );
+                assert_eq!(
+                    unsafe { wide(info.pDescription) }.expect("description"),
+                    "PDF capture port"
+                );
+            }
+        }
+        fs::remove_dir_all(folder).expect("cleanup");
+    }
 }

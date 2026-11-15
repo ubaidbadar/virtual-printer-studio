@@ -102,7 +102,7 @@ fn refresh(ui: &AppWindow, state: &State) {
             .printers
             .iter()
             .map(|p| p.count)
-            .sum::<u64>()
+            .fold(0u64, u64::saturating_add)
             .min(i32::MAX as u64) as i32,
     );
     ui.set_welcome(!state.welcomed);
