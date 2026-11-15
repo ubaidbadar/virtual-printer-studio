@@ -1,0 +1,53 @@
+name: Windows 10 evaluation VM acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Desktop checks run containing x64 QA build
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  vm:
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: virtual-printer-studio-windows
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: target/qa-package
+      - name: Prepare disposable Windows evaluation VM
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          mkdir -p target/win10-vm/pwsh
+          curl -fL --retry 3 'https://software-download.microsoft.com/download/db/444969d5-f34g-4e03-ac9d-1f9786c69161/19044.1288.211006-0501.21h2_release_svc_refresh_CLIENT_LTSC_EVAL_x64FRE_en-us.iso' -o target/win10-vm/windows.iso
+          echo '7e34e331696ca40fedf657162995c3ad  target/win10-vm/windows.iso' | md5sum -c -
+          curl -fL --retry 3 https://github.com/PowerShell/PowerShell/releases/download/v7.4.13/PowerShell-7.4.13-win-x64.zip -o target/win10-vm/pwsh.zip
+          unzip -q target/win10-vm/pwsh.zip -d target/win10-vm/pwsh
+      - name: Install Windows 10 and exercise actual inbox PDF printer
+        run: python scripts/qa/windows10-vm.py --work target/win10-vm
+      - name: Extract guest evidence
+        if: always()
+        run: |
+          mkdir -p target/win10-evidence
+          cp target/win10-vm/vm-platform.json target/win10-vm/qemu.log target/win10-evidence/ || true
+          if [ -f target/win10-vm/evidence.zip ]; then unzip -q target/win10-vm/evidence.zip -d target/win10-evidence; fi
+      - name: Check guest acceptance result
+        run: python -c "import json; r=json.load(open('target/win10-evidence/result.json',encoding='utf-8-sig')); print(r); assert r['exit_code']==0"
+      - run: pip install -r scripts/qa/requirements.txt
+      - name: Measure reference pixel differences
+        run: python scripts/qa/compare-visuals.py --actual target/win10-evidence/visuals --output target/win10-evidence/comparison
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-10-vm-evidence
+          path: target/win10-evidence/
+          if-no-files-found: error

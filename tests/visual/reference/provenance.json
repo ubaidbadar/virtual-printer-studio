@@ -1,0 +1,47 @@
+[
+  {
+    "file": "01-printers.png",
+    "sha256": "61f24bdd205cf17b0e4faa2f0e52260982efe41bc87d255c6c2db7da143b2726",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "02-new-printer.png",
+    "sha256": "cfd2b2e13ef75996b0da68a7789a368d159524c64bfc8d18f4df2e145286be88",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "03-printer-detail.png",
+    "sha256": "f601dfef50f5c1590f4d5c7b348940aebca5877d7eab4a41636fd9f3edf1772f",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "04-activity.png",
+    "sha256": "121b1105e7ac3a8df307734cfd26662f9ee47856b04671bd41d952e32ed8de5d",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "05-settings.png",
+    "sha256": "fa9b14367bbfaa8b77d1cd3e4316dd98964648c85c0f5cfe11fc1bd570fb8f7c",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "06-first-run.png",
+    "sha256": "d098abbd5836eb25a971c0b938e9511a4008c3c163fe67d02c746269651d6ef4",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "07-printers-dark.png",
+    "sha256": "d65029deb0d2e1000daa82425833f228a831edd29e52ddbfa63c3e4122454ee1",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "08-tray-and-toast.png",
+    "sha256": "185d73069e40a5f3faecacab5e78bbee043f8e9ea5ec2b2eaab86a6d2be13430",
+    "source": "user-provided ui ux.zip"
+  },
+  {
+    "file": "09-logo.png",
+    "sha256": "af658b12c9b21e4a200ca402f2c54112baad880a89f5bb01b69dfd1ae856ba2f",
+    "source": "user-provided ui ux.zip"
+  }
+]

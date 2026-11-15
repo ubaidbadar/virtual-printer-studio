@@ -4792,6 +4792,7 @@ dependencies = [
  "i-slint-backend-testing",
  "notify",
  "open",
+ "png",
  "rfd",
  "serde",
  "serde_json",

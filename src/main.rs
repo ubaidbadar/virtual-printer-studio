@@ -2,6 +2,7 @@
 mod domain;
 mod instance;
 mod platform;
+mod qa;
 mod service;
 use domain::*;
 use service::{Command, Service, Update};
@@ -160,7 +161,9 @@ fn send(ui: &AppWindow, sender: &Sender<Command>, command: Command) {
 fn main() -> std::process::ExitCode {
     if let Err(error) = run() {
         eprintln!("{error:#}");
-        if !std::env::args().any(|arg| arg == "--process-pending" || arg == "--serve") {
+        if !std::env::args()
+            .any(|arg| arg == "--process-pending" || arg == "--serve" || arg == "--ui-snapshot")
+        {
             rfd::MessageDialog::new()
                 .set_title("Virtual Printer Studio")
                 .set_description(format!("{error:#}"))
@@ -172,6 +175,13 @@ fn main() -> std::process::ExitCode {
     std::process::ExitCode::SUCCESS
 }
 fn run() -> anyhow::Result<()> {
+    let args: Vec<_> = std::env::args().collect();
+    if let Some(index) = args.iter().position(|arg| arg == "--ui-snapshot") {
+        let output = args
+            .get(index + 1)
+            .ok_or_else(|| anyhow::anyhow!("--ui-snapshot needs an output directory"))?;
+        return qa::snapshots(std::path::Path::new(output));
+    }
     let dirs =
         directories::ProjectDirs::from("studio", "VirtualPrinterStudio", "VirtualPrinterStudio")
             .ok_or_else(|| anyhow::anyhow!("Cannot locate application data"))?;
