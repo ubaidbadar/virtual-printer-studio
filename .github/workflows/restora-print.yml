@@ -59,6 +59,12 @@ jobs:
           RESTORA_TEST_EMAIL: ${{ secrets.RESTORA_TEST_EMAIL }}
           RESTORA_TEST_PASSWORD: ${{ secrets.RESTORA_TEST_PASSWORD }}
           VPS_PRINT_SCENARIO: ${{ inputs.scenario }}
-        run: ./scripts/qa/restora-print.ps1 -App target/qa-package/virtual-printer-studio.exe -BrowserFixture:($env:VPS_PRINT_SCENARIO -eq 'synthetic-browser')
-      # Deliberately no artifact upload, screenshots, traces or private diagnostics.
-      # Only the Python script's aggregate boolean checks and page sizes reach logs.
+        run: ./scripts/qa/restora-print.ps1 -App target/qa-package/virtual-printer-studio.exe -BrowserFixture:($env:VPS_PRINT_SCENARIO -eq 'synthetic-browser') -SyntheticEvidence target/synthetic-browser-evidence
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.scenario == 'synthetic-browser'
+        with:
+          name: synthetic-browser-evidence
+          path: target/synthetic-browser-evidence
+          if-no-files-found: ignore
+      # Live Restora has no artifact upload, screenshots, traces or diagnostics.
+      # Only its aggregate boolean checks and page sizes reach logs.

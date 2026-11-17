@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$App,
     [string]$Report = (Join-Path $env:TEMP 'vps-restora-redacted.json'),
-    [switch]$BrowserFixture
+    [switch]$BrowserFixture,
+    [string]$SyntheticEvidence
 )
 $ErrorActionPreference='Stop'
 if (!$BrowserFixture -and (!$env:RESTORA_TEST_EMAIL -or !$env:RESTORA_TEST_PASSWORD)) {
@@ -36,6 +37,14 @@ try {
     $exitCode=1
 } finally {
     Remove-Item Env:RESTORA_TEST_EMAIL,Env:RESTORA_TEST_PASSWORD -ErrorAction SilentlyContinue
+    # This opt-in export is restricted to the static, unauthenticated fixture.
+    # The live Restora path never copies its PDFs or diagnostics out of TEMP.
+    if ($BrowserFixture -and $SyntheticEvidence -and $output -and (Test-Path -LiteralPath $output)) {
+        New-Item -ItemType Directory -Path $SyntheticEvidence -Force|Out-Null
+        Get-ChildItem -LiteralPath $output -Filter '*.pdf'|Copy-Item -Destination $SyntheticEvidence
+        Get-PrintConfiguration -PrinterName $name|Select-Object PaperSize,Color,DuplexingMode|ConvertTo-Json|Set-Content (Join-Path $SyntheticEvidence 'paper.json')
+        if (Test-Path -LiteralPath $Report) { Copy-Item -LiteralPath $Report -Destination (Join-Path $SyntheticEvidence 'report.json') }
+    }
     if ($network -and $defaultPrinter) {
         try { $network.SetDefaultPrinter($defaultPrinter) }
         catch { Write-Host 'FAIL: Could not restore the previous default printer.';$exitCode=1 }
