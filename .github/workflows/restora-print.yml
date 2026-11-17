@@ -1,0 +1,57 @@
+name: Private Restora Windows print acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Desktop checks run containing the tested x64 package
+        required: true
+        default: '43773442326'
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: private-restora-print
+  cancel-in-progress: false
+jobs:
+  print:
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - name: Require protected test credentials
+        shell: pwsh
+        env:
+          RESTORA_TEST_EMAIL: ${{ secrets.RESTORA_TEST_EMAIL }}
+          RESTORA_TEST_PASSWORD: ${{ secrets.RESTORA_TEST_PASSWORD }}
+        run: |
+          if (!$env:RESTORA_TEST_EMAIL -or !$env:RESTORA_TEST_PASSWORD) {
+            throw 'Missing protected RESTORA_TEST_EMAIL / RESTORA_TEST_PASSWORD repository secrets.'
+          }
+      - uses: actions/checkout@v4
+      - name: Verify actual Windows 11 client OS
+        shell: pwsh
+        run: |
+          $os=Get-CimInstance Win32_OperatingSystem
+          if ($os.ProductType -ne 1 -or [int]$os.BuildNumber -lt 22000) {
+            throw 'This acceptance requires actual Windows 11 client.'
+          }
+          Write-Host "Windows client build $($os.BuildNumber); x64 app under ARM64 emulation."
+      - uses: actions/download-artifact@v4
+        with:
+          name: virtual-printer-studio-windows
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: target/qa-package
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r scripts/qa/restora-requirements.txt
+      - name: Print existing order through headful Edge and Windows queue
+        shell: pwsh
+        env:
+          RESTORA_TEST_EMAIL: ${{ secrets.RESTORA_TEST_EMAIL }}
+          RESTORA_TEST_PASSWORD: ${{ secrets.RESTORA_TEST_PASSWORD }}
+        run: ./scripts/qa/restora-print.ps1 -App target/qa-package/virtual-printer-studio.exe
+      # Deliberately no artifact upload, screenshots, traces or private diagnostics.
+      # Only the Python script's aggregate boolean checks and page sizes reach logs.

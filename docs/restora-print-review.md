@@ -6,7 +6,7 @@ Public-source inspection on 2026-11-17 found the deployed entry bundle `index-RM
 
 A real test needs a signed-in Restora browser on the same Windows machine as the installed virtual queue and an existing authorized test order. Record which path is used; a server/bridge success message alone does not prove the local virtual queue received a job. Verify the resulting PDF against the order's items, quantities, prices, tax, totals, payment stamp, notes and any logo. Check receipt width, long-order pagination, clipping, reprinting and duplicate handling. Use the actual order Print action; browser Save as PDF bypasses the Windows printer and is insufficient.
 
-This session has no callable browser-control tool or authenticated Restora session. No orders were created, modified, paid, or queued for printing during this inspection.
+The initial public-source inspection had no authenticated session. The subsequent authenticated browser checks are described below.
 
 ## Reuse and structure review
 
@@ -24,4 +24,14 @@ Private Chromium reference renders contained the order items and receipt total. 
 
 The remaining check is the actual browser-to-Windows-queue path. A proposed temporary Windows 11 test would install the existing tested application, create a uniquely named PDF queue, authenticate in headful Edge, operate those same three existing-order print actions, and verify the resulting Microsoft-driver PDFs. It would create no orders, change no payments, upload no order contents/screenshots/PDFs, log only redacted status and page dimensions, and remove temporary credentials and queues afterward.
 
-That Windows execution has not been run. Automatic approval review rejected the earlier proposed account-data artifact export because that destination and payload were not explicitly authorized. Explicit approval is needed before using the test account in the proposed GitHub-hosted Windows run. The earlier application-only Windows checks remain valid independently of this site-specific check.
+The owner subsequently authorized this temporary, no-export Windows test. The connected GitHub integration returns HTTP 403 (`Resource not accessible by integration`) for repository Actions secrets. It can push source and dispatch workflows, but cannot supply the temporary protected credentials needed by this job. Credentials must not be substituted into workflow inputs, source or logs. The Windows Restora execution remains unverified. The earlier application-only Windows checks remain valid independently of this site-specific check.
+
+## Reproducible private acceptance
+
+The manual **Private Restora Windows print acceptance** workflow uses the existing x64 package on an actual Windows 11 ARM64 runner (x64 emulation). It requires protected `RESTORA_TEST_EMAIL` and `RESTORA_TEST_PASSWORD` repository secrets. It does not upload artifacts or private diagnostics. Delete temporary secrets after the test.
+
+`scripts/qa/restora-print.ps1` creates a unique native PDF queue, temporarily selects it as the default, and runs headful Edge with kiosk printing. It restores the previous default, removes the test queue, and deletes the browser profile, capture state, logs and PDFs in a `finally` block. Use this wrapper on a disposable elevated Windows session. A runner crash can prevent cleanup; hosted VMs are destroyed after the job.
+
+`scripts/qa/restora-print.py` signs in, reads the existing order response, operates receipt/kitchen/reprint, observes the site's real iframe `window.print()` calls without replacing them, and waits for three distinct deliveries through the app. It checks all printed lines, order item names and total, Microsoft PDF producer, 80 mm width, and footer-only pagination. The redacted report contains only counts, booleans, page dimensions, HTTP statuses and static failure messages. Layout failures fail acceptance even if delivery and content pass. Logos, visual alignment, every tax/payment variation and long-order behavior still require additional fixtures; this test does not claim exhaustive coverage.
+
+The same script's explicitly separate `--reference-only` mode was executed in local Chromium with protected environment credentials. It reproduced all three print actions: content checks passed, the kitchen slip passed, and both receipts failed because of a footer-only second page. This mode uses Chromium's PDF renderer and cannot establish Windows printer compatibility.

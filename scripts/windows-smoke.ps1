@@ -1,7 +1,9 @@
 param(
     [Parameter(Mandatory=$true)][string]$App,
     [string]$TestRoot = (Join-Path $env:TEMP ('VpsSmoke-' + [guid]::NewGuid().ToString())),
-    [switch]$Extended
+    [switch]$Extended,
+    # Internal: dot-source the native fixture for another acceptance scenario.
+    [switch]$FixtureOnly
 )
 $ErrorActionPreference = 'Stop'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -102,6 +104,7 @@ function Wait-Saved([int]$count) {
     Get-PrintJob -PrinterName $name | Format-List * | Out-String | Write-Host
     throw "Timed out waiting for $count delivered PDFs."
 }
+if ($FixtureOnly) { return }
 $installed=$false
 try {
     Start-Capture
