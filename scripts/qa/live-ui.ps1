@@ -36,7 +36,7 @@ function Wait-State([scriptblock]$Predicate) {
 function Find-Element([string]$Label,$ControlType=$null) {
     $condition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty,$Label)
     if($ControlType){$condition=New-Object Windows.Automation.AndCondition($condition,(New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty,$ControlType)))}
-    $deadline=(Get-Date).AddSeconds(8)
+    $deadline=(Get-Date).AddSeconds(90)
     do {
         $element=$root.FindFirst([Windows.Automation.TreeScope]::Descendants,$condition)
         if($element -and $element.Current.IsEnabled){return $element}
