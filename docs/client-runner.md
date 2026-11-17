@@ -1,5 +1,7 @@
 # Actual Windows 10 / 11 acceptance runner
 
+Hosted Windows 11 ARM64 testing and an automated Windows 10 x64 evaluation VM are available without setting up your own computer. See [client testing](client-testing.md). The setup below is the optional dedicated native x64 runner path.
+
 Use a disposable **x64 Windows 10 or 11 VM**, with an interactive desktop. This runner executes repository code with administrator rights to install/remove temporary printers. Use the manual acceptance workflow on `main`; do not attach an elevated runner on a personal machine to untrusted pull-request jobs.
 
 1. Download [setup-client-runner.ps1](../scripts/qa/setup-client-runner.ps1) to the VM.

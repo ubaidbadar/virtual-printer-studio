@@ -1,0 +1,7 @@
+{
+  "architecture": "x86_64",
+  "fixture": "deterministic UI state; no native printer backend",
+  "os": "windows",
+  "reference_normalization": "remove reference top 40 pixels (window title bar); no resizing or alignment",
+  "scale_factor": 1.0
+}

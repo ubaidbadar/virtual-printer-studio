@@ -90,3 +90,5 @@ Delete installed printers through the app, quit it, then run `install.ps1 -Unins
 No application distribution license has been selected by the owner. Review Slint's GPLv3, royalty-free and commercial options at https://slint.dev/license/ before distribution. **Made with Slint** — https://slint.dev.
 
 See [validation](docs/validation.md) for evidence and dependency-review findings. PDF/A conversion, password encryption and PDF editing are outside the supported feature set.
+
+Actual client OS testing, GUI automation and the current visual mismatch are documented in [client testing](docs/client-testing.md). The application is not yet pixel perfect against the supplied designs.

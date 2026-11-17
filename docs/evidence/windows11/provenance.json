@@ -1,0 +1,8 @@
+{
+  "workflow_run": 43773895808,
+  "evidence_artifact": 14185074794,
+  "binary_artifact": 14185413148,
+  "binary_source_commit": "abb9cc1",
+  "os": "Windows 11 Enterprise build 26200 ARM64; application x64 under Windows emulation",
+  "fixture": "Deterministic application client-area state. Named printers in this image are visual fixtures, not the real temporary acceptance queues."
+}

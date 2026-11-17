@@ -4,13 +4,13 @@ Version 0.2 includes the Windows printer implementation; the earlier 0.1 restric
 
 ## Automated evidence
 
-- Fourteen portable workspace tests cover validation, filename collisions, delivery receipts, interrupted commits, failed-job recovery, acknowledgements, state recovery, filesystem events, LPR framing/retry and UI callbacks.
+- Seventeen portable workspace tests cover validation, filename collisions, delivery receipts, interrupted commits, failed-job recovery, acknowledgements, state recovery, filesystem events, LPR framing/retry, malformed and interrupted transfers, replay after payload reclamation, Unicode metadata, and actual widget accessibility actions. An additional Windows test executes the locked installer with PowerShell while verifying that another writer is refused.
 - The application cross-compiles against the Windows target and is checked with Clippy for both platforms.
 - The standalone Windows LPR acceptance run [43695921190](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43695921190) installed a real Microsoft PDF printer, captured its PDF and original job title over a configurable Standard TCP/IP LPR port, and removed the printer/port successfully.
-- The full application run [43753732917](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43753732917) passed on Windows and Linux. Its native test delivered six real PDFs, preserved document titles, rejected a non-spooler connection, paused/resumed printing, recovered a print submitted while the app was stopped, recovered a missing output folder after restart, verified no duplicate output, and removed the temporary printer and port.
+- The driver/receiver integration run [43753732917](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43753732917) passed on Windows and Linux. Its native test delivered six real PDFs, preserved document titles, rejected a non-spooler connection, paused/resumed printing, recovered a print submitted while the app was stopped, recovered a missing output folder after restart, verified no duplicate output, and removed the temporary printer and port.
 - Windows builds statically link the C runtime so the package does not require a separate VC++ redistributable. Each integration run uses an isolated evidence subdirectory.
 
-Manual Windows/Narrator, DPI/multi-monitor and notification-activation acceptance testing still needs a desktop. Toast actions operate while the process is alive; no separate out-of-process COM activator is registered.
+See [client testing](client-testing.md) for actual client OS evidence and the visual comparison. Manual Narrator speech, physical multi-monitor DPI changes and notification-activation acceptance remain separate checks. Toast actions operate while the process is alive; no separate out-of-process COM activator is registered.
 
 ## Dependency review
 
