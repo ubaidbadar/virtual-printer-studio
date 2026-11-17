@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import subprocess
 import time
 import unicodedata
 
@@ -30,6 +31,33 @@ def compact(value):
 def inspect_pdf(path, source, order, kind, native):
     reader = PdfReader(path)
     texts = [page.extract_text() or '' for page in reader.pages]
+    method = 'pdf_text'
+    lines = [compact(line) for line in source.splitlines() if compact(line)]
+    if native and not all(line in compact('\n'.join(texts)) for line in lines):
+        # Edge can submit vector outlines. Read their visual text using the local
+        # Windows OCR API; account contents never leave this machine.
+        import fitz
+        document = fitz.open(path)
+        texts = []
+        try:
+            for index, page in enumerate(document):
+                image = path.with_suffix(f'.ocr-{index}.png')
+                result = path.with_suffix(f'.ocr-{index}.txt')
+                try:
+                    page.get_pixmap(matrix=fitz.Matrix(3, 3)).save(image)
+                    process = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive',
+                        '-File', str(Path(__file__).with_name('windows-ocr.ps1')),
+                        '-Image', str(image.resolve()), '-TextOutput', str(result.resolve())],
+                        capture_output=True, timeout=60)
+                    if process.returncode != 0 or not result.exists():
+                        raise CheckFailed('Local Windows OCR is unavailable')
+                    texts.append(result.read_text(encoding='utf-8-sig'))
+                finally:
+                    image.unlink(missing_ok=True)
+                    result.unlink(missing_ok=True)
+        finally:
+            document.close()
+        method = 'windows_local_ocr'
     text = compact('\n'.join(texts))
     # Check against both the independent order response and every printed line.
     items = order.get('items', [])
@@ -49,7 +77,7 @@ def inspect_pdf(path, source, order, kind, native):
                    ('printed' in last or 'staff' in last) and
                    not any(compact(i['name']) in last for i in items))
     content_ok = bool(item_checks) and all(item_checks) and all(line_checks) and total_ok
-    return {'kind': kind, 'pages': len(texts), 'page_sizes': sizes,
+    return {'kind': kind, 'pages': len(texts), 'page_sizes': sizes, 'content_method': method,
             'items_checked': len(item_checks), 'content_ok': content_ok,
             'microsoft_driver': producer_ok if native else None,
             'width_80mm': width_ok, 'footer_only_page': footer_only,
