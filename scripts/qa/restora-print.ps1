@@ -40,10 +40,12 @@ try {
     # This opt-in export is restricted to the static, unauthenticated fixture.
     # The live Restora path never copies its PDFs or diagnostics out of TEMP.
     if ($BrowserFixture -and $SyntheticEvidence -and $output -and (Test-Path -LiteralPath $output)) {
-        New-Item -ItemType Directory -Path $SyntheticEvidence -Force|Out-Null
-        Get-ChildItem -LiteralPath $output -Filter '*.pdf'|Copy-Item -Destination $SyntheticEvidence
-        Get-PrintConfiguration -PrinterName $name|Select-Object PaperSize,Color,DuplexingMode|ConvertTo-Json|Set-Content (Join-Path $SyntheticEvidence 'paper.json')
-        if (Test-Path -LiteralPath $Report) { Copy-Item -LiteralPath $Report -Destination (Join-Path $SyntheticEvidence 'report.json') }
+        try {
+            New-Item -ItemType Directory -Path $SyntheticEvidence -Force|Out-Null
+            Get-ChildItem -LiteralPath $output -Filter '*.pdf'|Copy-Item -Destination $SyntheticEvidence
+            Get-PrintConfiguration -PrinterName $name|Select-Object PaperSize,Color,DuplexingMode|ConvertTo-Json|Set-Content (Join-Path $SyntheticEvidence 'paper.json')
+            if (Test-Path -LiteralPath $Report) { Copy-Item -LiteralPath $Report -Destination (Join-Path $SyntheticEvidence 'report.json') }
+        } catch { Write-Host 'FAIL: Could not collect synthetic evidence.';$exitCode=1 }
     }
     if ($network -and $defaultPrinter) {
         try { $network.SetDefaultPrinter($defaultPrinter) }
