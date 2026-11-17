@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory=$true)][string]$App,
     [string]$Report = (Join-Path $env:TEMP 'vps-restora-redacted.json'),
     [switch]$BrowserFixture,
-    [string]$SyntheticEvidence
+    [string]$SyntheticEvidence,
+    [switch]$ProbeCustomPaper
 )
 $ErrorActionPreference='Stop'
 if (!$BrowserFixture -and (!$env:RESTORA_TEST_EMAIL -or !$env:RESTORA_TEST_PASSWORD)) {
@@ -12,6 +13,7 @@ $privateRoot=Join-Path $env:TEMP ('VpsRestora-'+[guid]::NewGuid().ToString())
 $installed=$false
 $defaultPrinter=$null
 $network=$null
+$customForm=$null
 $exitCode=1
 try {
     . (Join-Path $PSScriptRoot '..\windows-smoke.ps1') -App $App -TestRoot $privateRoot -FixtureOnly
@@ -24,6 +26,11 @@ try {
     Start-Capture *> $null
     $installed=$true
     Configure 'ensure' *> $null
+    if ($BrowserFixture -and $ProbeCustomPaper) {
+        $customForm='VPS80-'+$id.Substring(0,8)
+        & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'custom-paper.ps1') -PrinterName $name -FormName $customForm -Report (Join-Path $TestRoot 'custom-paper.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Custom paper probe failed.' }
+    }
     $network.SetDefaultPrinter($name)
     if (!(Get-CimInstance Win32_Printer|Where-Object { $_.Default -and $_.Name -eq $name })) {
         throw 'Could not select the temporary default printer.'
@@ -47,6 +54,7 @@ try {
             & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'inspect-paper.ps1') -PrinterName $name -OutputPath (Join-Path $SyntheticEvidence 'driver-paper.json')
             if ($LASTEXITCODE -ne 0) { throw 'Driver media inspection failed.' }
             if (Test-Path -LiteralPath $Report) { Copy-Item -LiteralPath $Report -Destination (Join-Path $SyntheticEvidence 'report.json') }
+            if ($customForm -and (Test-Path (Join-Path $TestRoot 'custom-paper.json'))) { Copy-Item (Join-Path $TestRoot 'custom-paper.json') -Destination $SyntheticEvidence }
         } catch { Write-Host 'FAIL: Could not collect synthetic evidence.';$exitCode=1 }
     }
     if ($network -and $defaultPrinter) {
@@ -63,6 +71,12 @@ try {
             Get-PrintJob -PrinterName $name -ErrorAction SilentlyContinue|Remove-PrintJob -ErrorAction SilentlyContinue
             Configure 'remove' *> $null
         } catch { Write-Host 'FAIL: Could not remove the temporary queue.';$exitCode=1 }
+    }
+    if ($customForm) {
+        try {
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'custom-paper.ps1') -PrinterName $name -FormName $customForm -Report (Join-Path $TestRoot 'custom-paper.json') -Remove
+            if ($LASTEXITCODE -ne 0) { throw 'Custom form cleanup failed.' }
+        } catch { Write-Host 'FAIL: Could not remove the temporary paper form.';$exitCode=1 }
     }
     if (Test-Path -LiteralPath $privateRoot) {
         try { Remove-Item -LiteralPath $privateRoot -Recurse -Force }

@@ -7,6 +7,10 @@ on:
         type: choice
         default: live-restora
         options: [live-restora, synthetic-browser]
+      probe_custom_paper:
+        description: Synthetic fixture only - try a temporary registered 80 mm form
+        type: boolean
+        default: false
       artifact_run_id:
         description: Desktop checks run containing the tested x64 package
         required: true
@@ -60,7 +64,8 @@ jobs:
           RESTORA_TEST_EMAIL: ${{ secrets.RESTORA_TEST_EMAIL }}
           RESTORA_TEST_PASSWORD: ${{ secrets.RESTORA_TEST_PASSWORD }}
           VPS_PRINT_SCENARIO: ${{ inputs.scenario }}
-        run: ./scripts/qa/restora-print.ps1 -App target/qa-package/virtual-printer-studio.exe -BrowserFixture:($env:VPS_PRINT_SCENARIO -eq 'synthetic-browser') -SyntheticEvidence target/synthetic-browser-evidence
+          VPS_CUSTOM_PAPER: ${{ inputs.probe_custom_paper }}
+        run: ./scripts/qa/restora-print.ps1 -App target/qa-package/virtual-printer-studio.exe -BrowserFixture:($env:VPS_PRINT_SCENARIO -eq 'synthetic-browser') -SyntheticEvidence target/synthetic-browser-evidence -ProbeCustomPaper:($env:VPS_CUSTOM_PAPER -eq 'true')
       - uses: actions/upload-artifact@v4
         if: always() && inputs.scenario == 'synthetic-browser'
         with:
