@@ -1,0 +1,186 @@
+{
+  "custom_request_mm": [
+    80,
+    150
+  ],
+  "conflict_status": "NoConflict",
+  "validated_width_mm": 215.9,
+  "supported_papers": [
+    {
+      "height_mm": 279.4,
+      "name": "NorthAmericaLetter",
+      "width_mm": 215.9
+    },
+    {
+      "height_mm": 431.8,
+      "name": "NorthAmericaTabloid",
+      "width_mm": 279.4
+    },
+    {
+      "height_mm": 355.6,
+      "name": "NorthAmericaLegal",
+      "width_mm": 215.9
+    },
+    {
+      "height_mm": 215.9,
+      "name": "NorthAmericaStatement",
+      "width_mm": 139.7
+    },
+    {
+      "height_mm": 266.7,
+      "name": "NorthAmericaExecutive",
+      "width_mm": 184.15
+    },
+    {
+      "height_mm": 420,
+      "name": "ISOA3",
+      "width_mm": 297
+    },
+    {
+      "height_mm": 297,
+      "name": "ISOA4",
+      "width_mm": 210
+    },
+    {
+      "height_mm": 210,
+      "name": "ISOA5",
+      "width_mm": 148
+    },
+    {
+      "height_mm": 364,
+      "name": "JISB4",
+      "width_mm": 257
+    },
+    {
+      "height_mm": 257,
+      "name": "JISB5",
+      "width_mm": 182
+    },
+    {
+      "height_mm": 225.42,
+      "name": "NorthAmericaNumber9Envelope",
+      "width_mm": 98.42
+    },
+    {
+      "height_mm": 241.3,
+      "name": "NorthAmericaNumber10Envelope",
+      "width_mm": 104.78
+    },
+    {
+      "height_mm": 558.8,
+      "name": "NorthAmericaCSheet",
+      "width_mm": 431.8
+    },
+    {
+      "height_mm": 863.6,
+      "name": "NorthAmericaDSheet",
+      "width_mm": 558.8
+    },
+    {
+      "height_mm": 1117.6,
+      "name": "NorthAmericaESheet",
+      "width_mm": 863.6
+    },
+    {
+      "height_mm": 220,
+      "name": "ISODLEnvelope",
+      "width_mm": 110
+    },
+    {
+      "height_mm": 229,
+      "name": "ISOC5Envelope",
+      "width_mm": 162
+    },
+    {
+      "height_mm": 324,
+      "name": "ISOC4Envelope",
+      "width_mm": 229
+    },
+    {
+      "height_mm": 250,
+      "name": "ISOB5Envelope",
+      "width_mm": 176
+    },
+    {
+      "height_mm": 190.5,
+      "name": "NorthAmericaMonarchEnvelope",
+      "width_mm": 98.42
+    },
+    {
+      "height_mm": 148,
+      "name": "JapanHagakiPostcard",
+      "width_mm": 100
+    },
+    {
+      "height_mm": 594,
+      "name": "ISOA2",
+      "width_mm": 420
+    },
+    {
+      "height_mm": 148,
+      "name": "ISOA6",
+      "width_mm": 105
+    },
+    {
+      "height_mm": 332,
+      "name": "JapanKaku2Envelope",
+      "width_mm": 240
+    },
+    {
+      "height_mm": 277,
+      "name": "JapanKaku3Envelope",
+      "width_mm": 216
+    },
+    {
+      "height_mm": 235,
+      "name": "JapanChou3Envelope",
+      "width_mm": 120
+    },
+    {
+      "height_mm": 205,
+      "name": "JapanChou4Envelope",
+      "width_mm": 90
+    },
+    {
+      "height_mm": 235,
+      "name": "JapanYou4Envelope",
+      "width_mm": 105
+    },
+    {
+      "height_mm": 86,
+      "name": "CreditCard",
+      "width_mm": 54
+    },
+    {
+      "height_mm": 1189,
+      "name": "ISOA0",
+      "width_mm": 841
+    },
+    {
+      "height_mm": 841,
+      "name": "ISOA1",
+      "width_mm": 594
+    },
+    {
+      "height_mm": 190,
+      "name": "JapanYou6Envelope",
+      "width_mm": 98
+    },
+    {
+      "height_mm": 152.4,
+      "name": "NorthAmerica4x6",
+      "width_mm": 101.6
+    },
+    {
+      "height_mm": 177.8,
+      "name": "NorthAmerica5x7",
+      "width_mm": 127
+    },
+    {
+      "height_mm": 254,
+      "name": "NorthAmerica8x10",
+      "width_mm": 203.2
+    }
+  ],
+  "validated_height_mm": 279.4
+}

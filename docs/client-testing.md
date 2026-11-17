@@ -7,7 +7,7 @@ The tested x64 application source is `abb9cc1`, packaged by [Desktop checks 4377
 | Target | Actual environment | Result | Evidence |
 |---|---|---|---|
 | Windows 11 | Enterprise build 26200, ARM64 host running the x64 application through Windows emulation | Full printer, GUI, background and scale checks passed | [Run 43775185171](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43775185171) |
-| Windows 10 | Enterprise LTSC Evaluation build 19044, native x64 guest in QEMU/KVM | Real driver/PDF checks passed; GUI automation is not yet verified | [Driver evidence 43775018710](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43775018710) |
+| Windows 10 | Enterprise LTSC Evaluation build 19044, native x64 guest in QEMU/KVM | Real driver/PDF and GUI automation passed | [Run 44038396389](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/44038396389) |
 | Windows Server / Linux | Hosted Desktop checks | Build, lint and tests passed; six additional driver PDFs on Windows Server | [Run 43773442326](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43773442326) |
 | Design fidelity | Seven actual client-area renders against the supplied images | **Not pixel perfect** | [Measured Windows 11 differences](evidence/windows11/visual-comparison.json) |
 
@@ -16,6 +16,8 @@ The Windows 11 GUI test also closes the native window, prints from an external p
 [Download the tested x64 package](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43773442326/artifacts/14185413148). ZIP SHA256: `210f1613a819d204a72a371d567203651a24b8e7242a9d953c5d52028097d29b`. The executable has the Windows GUI subsystem, statically linked CRT and only inbox Windows DLL imports.
 
 Windows 10 evidence: [OS identity](evidence/windows10/platform.json), [successful guest result](evidence/windows10/result.json), [live GUI actions](evidence/windows10/gui-actions.json), and [visual differences](evidence/windows10/visual-comparison.json). The completed run independently parsed ten driver PDFs plus the GUI-generated test PDF. Its [full evidence artifact](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/44038396389/artifacts/14308857022) includes the actual PDFs and logs.
+
+The subsequent [browser and Restora checks](restora-print-review.md) are separate: actual Edge-to-Windows printing delivered three synthetic receipts with verified visual text, but the Microsoft driver used Letter instead of the requested 80 mm paper. Authenticated Restora reference renders passed; the same-account Windows run remains blocked by unavailable protected credentials. These results do not establish receipt-format compatibility or pixel-perfect design conformance.
 
 ## How the tests run
 

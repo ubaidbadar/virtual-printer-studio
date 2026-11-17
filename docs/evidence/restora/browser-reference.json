@@ -1,0 +1,66 @@
+{
+  "mode": "chromium_reference",
+  "stage": "complete",
+  "pass": true,
+  "checks": [
+    {
+      "kind": "receipt",
+      "pages": 1,
+      "page_sizes": [
+        {
+          "width_mm": 80.09,
+          "height_mm": 135.13
+        }
+      ],
+      "content_method": "pdf_text",
+      "items_checked": 4,
+      "content_ok": true,
+      "microsoft_driver": null,
+      "width_80mm": true,
+      "footer_only_page": false,
+      "pass": true,
+      "source_mode": "CSS1Compat"
+    },
+    {
+      "kind": "kitchen",
+      "pages": 1,
+      "page_sizes": [
+        {
+          "width_mm": 80.09,
+          "height_mm": 77.98
+        }
+      ],
+      "content_method": "pdf_text",
+      "items_checked": 4,
+      "content_ok": true,
+      "microsoft_driver": null,
+      "width_80mm": true,
+      "footer_only_page": false,
+      "pass": true,
+      "source_mode": "CSS1Compat"
+    },
+    {
+      "kind": "receipt",
+      "pages": 1,
+      "page_sizes": [
+        {
+          "width_mm": 80.09,
+          "height_mm": 135.13
+        }
+      ],
+      "content_method": "pdf_text",
+      "items_checked": 4,
+      "content_ok": true,
+      "microsoft_driver": null,
+      "width_80mm": true,
+      "footer_only_page": false,
+      "pass": true,
+      "source_mode": "CSS1Compat"
+    }
+  ],
+  "print_api_statuses": [
+    409,
+    409,
+    409
+  ]
+}

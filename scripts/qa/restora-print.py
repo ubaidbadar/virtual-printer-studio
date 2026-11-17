@@ -92,8 +92,11 @@ new MutationObserver(records => {
     if (node.tagName === 'IFRAME' && node.contentWindow) {
       const frame = node.contentWindow, original = frame.print;
       frame.print = function() {
-        window.__vpsPrints.push({html: frame.document.documentElement.outerHTML,
-                                text: frame.document.body.innerText});
+        const doctype = frame.document.doctype;
+        const prefix = doctype ? new XMLSerializer().serializeToString(doctype) : '';
+        window.__vpsPrints.push({html: prefix + frame.document.documentElement.outerHTML,
+                                text: frame.document.body.innerText,
+                                mode: frame.document.compatMode});
         return original.call(frame);
       };
     }
@@ -211,7 +214,9 @@ def run(args, report):
                     pdf = args.work / f'reference-{index}.pdf'
                     render.pdf(path=str(pdf), print_background=True, prefer_css_page_size=True)
                     render.close()
-                report['checks'].append(inspect_pdf(pdf, source['text'], order, kind, native))
+                check = inspect_pdf(pdf, source['text'], order, kind, native)
+                check['source_mode'] = source['mode']
+                report['checks'].append(check)
             # Detect delayed duplicates before declaring success.
             if native:
                 page.wait_for_timeout(3000)

@@ -1,0 +1,58 @@
+{
+  "mode": "synthetic_windows_browser_queue",
+  "pass": false,
+  "stage": "complete",
+  "checks": [
+    {
+      "kind": "receipt",
+      "pages": 1,
+      "page_sizes": [
+        {
+          "width_mm": 215.9,
+          "height_mm": 279.4
+        }
+      ],
+      "content_method": "windows_local_ocr",
+      "items_checked": 1,
+      "content_ok": true,
+      "microsoft_driver": true,
+      "width_80mm": false,
+      "footer_only_page": false,
+      "pass": false
+    },
+    {
+      "kind": "kitchen",
+      "pages": 1,
+      "page_sizes": [
+        {
+          "width_mm": 215.9,
+          "height_mm": 279.4
+        }
+      ],
+      "content_method": "windows_local_ocr",
+      "items_checked": 1,
+      "content_ok": true,
+      "microsoft_driver": true,
+      "width_80mm": false,
+      "footer_only_page": false,
+      "pass": false
+    },
+    {
+      "kind": "receipt",
+      "pages": 1,
+      "page_sizes": [
+        {
+          "width_mm": 215.9,
+          "height_mm": 279.4
+        }
+      ],
+      "content_method": "windows_local_ocr",
+      "items_checked": 1,
+      "content_ok": true,
+      "microsoft_driver": true,
+      "width_80mm": false,
+      "footer_only_page": false,
+      "pass": false
+    }
+  ]
+}
