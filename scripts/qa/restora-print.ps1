@@ -1,9 +1,10 @@
 param(
     [Parameter(Mandatory=$true)][string]$App,
-    [string]$Report = (Join-Path $env:TEMP 'vps-restora-redacted.json')
+    [string]$Report = (Join-Path $env:TEMP 'vps-restora-redacted.json'),
+    [switch]$BrowserFixture
 )
 $ErrorActionPreference='Stop'
-if (!$env:RESTORA_TEST_EMAIL -or !$env:RESTORA_TEST_PASSWORD) {
+if (!$BrowserFixture -and (!$env:RESTORA_TEST_EMAIL -or !$env:RESTORA_TEST_PASSWORD)) {
     throw 'Supply RESTORA_TEST_EMAIL and RESTORA_TEST_PASSWORD through protected environment variables.'
 }
 $privateRoot=Join-Path $env:TEMP ('VpsRestora-'+[guid]::NewGuid().ToString())
@@ -26,7 +27,8 @@ try {
     if (!(Get-CimInstance Win32_Printer|Where-Object { $_.Default -and $_.Name -eq $name })) {
         throw 'Could not select the temporary default printer.'
     }
-    & python (Join-Path $PSScriptRoot 'restora-print.py') --printer $name --state $statePath --output $output --work (Join-Path $TestRoot 'browser') --report $Report
+    $testScript=if($BrowserFixture){'browser-print.py'}else{'restora-print.py'}
+    & python (Join-Path $PSScriptRoot $testScript) --printer $name --state $statePath --output $output --work (Join-Path $TestRoot 'browser') --report $Report
     $exitCode=$LASTEXITCODE
 } catch {
     # Never print raw browser, spooler or worker errors containing order metadata.

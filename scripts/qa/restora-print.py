@@ -94,15 +94,7 @@ def wait_pdf(folder, state_path, count, previous):
     raise CheckFailed('The Windows queue did not deliver the expected PDF')
 
 
-def run(args, report):
-    native = not args.reference_only
-    if native and sys.platform != 'win32':
-        raise CheckFailed('Native mode requires Windows')
-    if native and not (args.printer and args.state and args.output):
-        raise CheckFailed('Native mode requires a printer, capture state and output folder')
-    email, password = os.environ.get('RESTORA_TEST_EMAIL'), os.environ.get('RESTORA_TEST_PASSWORD')
-    if not email or not password:
-        raise CheckFailed('Missing protected test credentials')
+def launch_context(playwright, args, native):
     args.work.mkdir(parents=True, exist_ok=False)
     profile = args.work / 'profile'
     profile.mkdir()
@@ -114,17 +106,30 @@ def run(args, report):
             'selectedDestinationId': args.printer, 'isHeaderFooterEnabled': False})}}}
         (profile / 'Default').mkdir()
         (profile / 'Default' / 'Preferences').write_text(json.dumps(prefs), encoding='utf-8')
+    options = {'headless': not native,
+               'args': ['--kiosk-printing', '--no-first-run'] if native else ['--no-sandbox']}
+    if native:
+        options['channel'] = 'msedge'
+    elif args.chromium:
+        options['executable_path'] = args.chromium
+    context = playwright.chromium.launch_persistent_context(
+        profile, timezone_id='Asia/Karachi', **options)
+    context.add_init_script(PRINT_OBSERVER)
+    return context
+
+
+def run(args, report):
+    native = not args.reference_only
+    if native and sys.platform != 'win32':
+        raise CheckFailed('Native mode requires Windows')
+    if native and not (args.printer and args.state and args.output):
+        raise CheckFailed('Native mode requires a printer, capture state and output folder')
+    email, password = os.environ.get('RESTORA_TEST_EMAIL'), os.environ.get('RESTORA_TEST_PASSWORD')
+    if not email or not password:
+        raise CheckFailed('Missing protected test credentials')
     with sync_playwright() as playwright:
-        options = {'headless': not native,
-                   'args': ['--kiosk-printing', '--no-first-run'] if native else ['--no-sandbox']}
-        if native:
-            options['channel'] = 'msedge'
-        elif args.chromium:
-            options['executable_path'] = args.chromium
-        context = playwright.chromium.launch_persistent_context(
-            profile, timezone_id='Asia/Karachi', **options)
+        context = launch_context(playwright, args, native)
         try:
-            context.add_init_script(PRINT_OBSERVER)
             page = context.new_page()
             orders, statuses = [], []
 

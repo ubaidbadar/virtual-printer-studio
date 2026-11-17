@@ -2,6 +2,11 @@ name: Private Restora Windows print acceptance
 on:
   workflow_dispatch:
     inputs:
+      scenario:
+        description: Live authenticated order or independent synthetic browser fixture
+        type: choice
+        default: live-restora
+        options: [live-restora, synthetic-browser]
       artifact_run_id:
         description: Desktop checks run containing the tested x64 package
         required: true
@@ -20,6 +25,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Require protected test credentials
+        if: inputs.scenario == 'live-restora'
         shell: pwsh
         env:
           RESTORA_TEST_EMAIL: ${{ secrets.RESTORA_TEST_EMAIL }}
@@ -47,11 +53,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r scripts/qa/restora-requirements.txt
-      - name: Print existing order through headful Edge and Windows queue
+      - name: Print through headful Edge and Windows queue
         shell: pwsh
         env:
           RESTORA_TEST_EMAIL: ${{ secrets.RESTORA_TEST_EMAIL }}
           RESTORA_TEST_PASSWORD: ${{ secrets.RESTORA_TEST_PASSWORD }}
-        run: ./scripts/qa/restora-print.ps1 -App target/qa-package/virtual-printer-studio.exe
+          VPS_PRINT_SCENARIO: ${{ inputs.scenario }}
+        run: ./scripts/qa/restora-print.ps1 -App target/qa-package/virtual-printer-studio.exe -BrowserFixture:($env:VPS_PRINT_SCENARIO -eq 'synthetic-browser')
       # Deliberately no artifact upload, screenshots, traces or private diagnostics.
       # Only the Python script's aggregate boolean checks and page sizes reach logs.
