@@ -211,6 +211,8 @@ def run(args, report):
                 else:
                     render = context.new_page()
                     render.set_content(source['html'], wait_until='networkidle')
+                    if render.evaluate('document.compatMode') != source['mode']:
+                        raise CheckFailed('Reference render changed the source document mode')
                     pdf = args.work / f'reference-{index}.pdf'
                     render.pdf(path=str(pdf), print_background=True, prefer_css_page_size=True)
                     render.close()
