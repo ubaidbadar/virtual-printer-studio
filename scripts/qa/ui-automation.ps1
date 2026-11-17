@@ -23,7 +23,7 @@ try {
     } while((Get-Date) -lt $deadline)
     if($process.MainWindowHandle -eq [IntPtr]::Zero){throw 'No application window.'}
     $windowHandle=$process.MainWindowHandle
-    [VpsQaProcess]::ShowWindow($windowHandle,9)|Out-Null
+    [VpsQaProcess]::ShowWindowAsync($windowHandle,9)|Out-Null
     [VpsQaProcess]::SetForegroundWindow($windowHandle)|Out-Null
     Start-Sleep -Milliseconds 500
     $root=[Windows.Automation.AutomationElement]::FromHandle($windowHandle)

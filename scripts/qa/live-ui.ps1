@@ -59,7 +59,7 @@ try {
     $deadline=(Get-Date).AddSeconds(15)
     do {$process.Refresh();if($process.MainWindowHandle -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 100}while((Get-Date) -lt $deadline)
     if($process.MainWindowHandle -eq [IntPtr]::Zero){throw 'No live application window.'}
-    [VpsQaProcess]::ShowWindow($process.MainWindowHandle,9)|Out-Null
+    [VpsQaProcess]::ShowWindowAsync($process.MainWindowHandle,9)|Out-Null
     [VpsQaProcess]::SetForegroundWindow($process.MainWindowHandle)|Out-Null
     $root=[Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
     Invoke-Control 'Get started'

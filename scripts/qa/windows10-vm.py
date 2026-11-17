@@ -44,11 +44,13 @@ try {
     $nativeHandle=$process.Handle
     $snapshotExitCode=Wait-VpsProcess $process $nativeHandle 120000
     if($snapshotExitCode -ne 0){throw 'UI snapshot failed'}
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\vps\scripts\qa\ui-automation.ps1 -App C:\vps\app\virtual-printer-studio.exe -OutputDirectory "$evidence\ui-automation" *> "$evidence\ui-automation.log"
-    if($LASTEXITCODE -ne 0){throw 'Native UI Automation failed'}
+    $probe=Start-Process powershell.exe -ArgumentList @('-MTA','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\vps\scripts\qa\ui-automation.ps1','-App','C:\vps\app\virtual-printer-studio.exe','-OutputDirectory',"$evidence\ui-automation") -PassThru -RedirectStandardOutput "$evidence\ui-automation.log" -RedirectStandardError "$evidence\ui-automation-error.log"
+    $probeHandle=$probe.Handle
+    if((Wait-VpsProcess $probe $probeHandle 180000) -ne 0){throw 'Native UI Automation failed'}
     $env:VPS_DISPOSABLE_TEST_VM='1'
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\vps\scripts\qa\live-ui.ps1 -App C:\vps\app\virtual-printer-studio.exe -OutputDirectory "$evidence\live-ui" *> "$evidence\live-ui.log"
-    if($LASTEXITCODE -ne 0){throw 'Live GUI acceptance failed'}
+    $live=Start-Process powershell.exe -ArgumentList @('-MTA','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\vps\scripts\qa\live-ui.ps1','-App','C:\vps\app\virtual-printer-studio.exe','-OutputDirectory',"$evidence\live-ui") -PassThru -RedirectStandardOutput "$evidence\live-ui.log" -RedirectStandardError "$evidence\live-ui-error.log"
+    $liveHandle=$live.Handle
+    if((Wait-VpsProcess $live $liveHandle 240000) -ne 0){throw 'Live GUI acceptance failed'}
 } catch {
     $_|Out-String|Set-Content "$evidence\failure.txt"
     $code=1
@@ -69,7 +71,7 @@ answer=fr'''<?xml version="1.0" encoding="utf-8"?>
 <DiskConfiguration><Disk wcm:action="add"><DiskID>0</DiskID><WillWipeDisk>true</WillWipeDisk><CreatePartitions><CreatePartition wcm:action="add"><Order>1</Order><Type>Primary</Type><Size>100</Size></CreatePartition><CreatePartition wcm:action="add"><Order>2</Order><Type>Primary</Type><Extend>true</Extend></CreatePartition></CreatePartitions><ModifyPartitions><ModifyPartition wcm:action="add"><Order>1</Order><PartitionID>1</PartitionID><Active>true</Active><Format>NTFS</Format><Label>System</Label></ModifyPartition><ModifyPartition wcm:action="add"><Order>2</Order><PartitionID>2</PartitionID><Format>NTFS</Format><Letter>C</Letter></ModifyPartition></ModifyPartitions></Disk></DiskConfiguration>
 <ImageInstall><OSImage><InstallFrom><MetaData wcm:action="add"><Key>/IMAGE/INDEX</Key><Value>1</Value></MetaData></InstallFrom><InstallTo><DiskID>0</DiskID><PartitionID>2</PartitionID></InstallTo></OSImage></ImageInstall><UserData><AcceptEula>true</AcceptEula><FullName>VPS QA</FullName><Organization>VPS test</Organization></UserData></component>
 <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><SetupUILanguage><UILanguage>en-US</UILanguage></SetupUILanguage><InputLocale>en-US</InputLocale><SystemLocale>en-US</SystemLocale><UILanguage>en-US</UILanguage><UserLocale>en-US</UserLocale></component></settings>
-<settings pass="specialize"><component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><RunSynchronous><RunSynchronousCommand wcm:action="add"><Order>1</Order><Path>reg.exe add HKLM\SYSTEM\CurrentControlSet\Control\Network\NewNetworkWindowOff /f</Path></RunSynchronousCommand></RunSynchronous></component><component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><ComputerName>VPS-WIN10</ComputerName><TimeZone>UTC</TimeZone></component></settings>
+<settings pass="specialize"><component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><ComputerName>VPS-WIN10</ComputerName><TimeZone>UTC</TimeZone></component></settings>
 <settings pass="oobeSystem"><component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><InputLocale>0409:00000409</InputLocale><SystemLocale>en-US</SystemLocale><UILanguage>en-US</UILanguage><UserLocale>en-US</UserLocale></component><component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><OOBE><SkipMachineOOBE>true</SkipMachineOOBE><SkipUserOOBE>true</SkipUserOOBE><HideEULAPage>true</HideEULAPage><HideOnlineAccountScreens>true</HideOnlineAccountScreens><HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE><NetworkLocation>Work</NetworkLocation><ProtectYourPC>3</ProtectYourPC></OOBE><UserAccounts><LocalAccounts><LocalAccount wcm:action="add"><Name>VpsTest</Name><Group>Administrators</Group><Password><Value>{password}</Value><PlainText>true</PlainText></Password></LocalAccount></LocalAccounts></UserAccounts><AutoLogon><Username>VpsTest</Username><Enabled>true</Enabled><LogonCount>1</LogonCount><Password><Value>{password}</Value><PlainText>true</PlainText></Password></AutoLogon><FirstLogonCommands><SynchronousCommand wcm:action="add"><Order>1</Order><Description>Run acceptance</Description><CommandLine>{command.replace(chr(34),'&quot;')}</CommandLine></SynchronousCommand></FirstLogonCommands></component></settings></unattend>'''
 (payload/'Autounattend.xml').write_text(answer)
 subprocess.run(['genisoimage','-quiet','-J','-r','-V','VPSQA','-o',str(w/'payload.iso'),str(payload)], check=True)
@@ -98,7 +100,7 @@ args=['qemu-system-x86_64','-machine','q35,accel='+('kvm' if kvm else 'tcg'),'-c
 args.remove('-no-reboot')
 proc=subprocess.Popen(args,stdout=(w/'qemu.log').open('w'),stderr=subprocess.STDOUT)
 try:
-    for minute in range(100):
+    for minute in range(25):
         if (w/'evidence.zip').exists():break
         if proc.poll() is not None:raise RuntimeError('VM exited before sending evidence')
         try:
@@ -112,7 +114,7 @@ try:
             pass
         print(f'VM acceptance minute {minute+1}; waiting for Windows guest evidence',flush=True)
         time.sleep(60)
-    else:raise TimeoutError('Windows VM did not finish within 100 minutes')
+    else:raise TimeoutError('Windows VM did not finish within 25 minutes')
 finally:
     proc.terminate()
     proc.wait(timeout=20)
