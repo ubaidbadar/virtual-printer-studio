@@ -46,6 +46,7 @@ def inspect_pdf(path, source, order, kind, native):
                 try:
                     page.get_pixmap(matrix=fitz.Matrix(3, 3)).save(image)
                     process = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive',
+                        '-ExecutionPolicy', 'Bypass',
                         '-File', str(Path(__file__).with_name('windows-ocr.ps1')),
                         '-Image', str(image.resolve()), '-TextOutput', str(result.resolve())],
                         capture_output=True, timeout=60)

@@ -44,7 +44,7 @@ try {
             New-Item -ItemType Directory -Path $SyntheticEvidence -Force|Out-Null
             Get-ChildItem -LiteralPath $output -Filter '*.pdf'|Copy-Item -Destination $SyntheticEvidence
             Get-PrintConfiguration -PrinterName $name|Select-Object PaperSize,Color,DuplexingMode|ConvertTo-Json|Set-Content (Join-Path $SyntheticEvidence 'paper.json')
-            & powershell.exe -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'inspect-paper.ps1') -PrinterName $name -OutputPath (Join-Path $SyntheticEvidence 'driver-paper.json')
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'inspect-paper.ps1') -PrinterName $name -OutputPath (Join-Path $SyntheticEvidence 'driver-paper.json')
             if ($LASTEXITCODE -ne 0) { throw 'Driver media inspection failed.' }
             if (Test-Path -LiteralPath $Report) { Copy-Item -LiteralPath $Report -Destination (Join-Path $SyntheticEvidence 'report.json') }
         } catch { Write-Host 'FAIL: Could not collect synthetic evidence.';$exitCode=1 }
