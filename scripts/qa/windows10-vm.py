@@ -56,10 +56,18 @@ try {
     $code=1
 }
 @{exit_code=$code;environment='Windows 10 Enterprise LTSC evaluation, QEMU x64 VM';utc=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json|Set-Content "$evidence\result.json"
-Compress-Archive -Path "$evidence\*" -DestinationPath C:\evidence.zip -Force
-for($i=0;$i -lt 10;$i++){
- try {Invoke-WebRequest -Uri http://10.0.2.2:18080/evidence -Method Post -InFile C:\evidence.zip -UseBasicParsing|Out-Null;break}catch{Start-Sleep 5}
-}
+Get-Process -Name virtual-printer-studio -ErrorAction SilentlyContinue|Stop-Process -Force -ErrorAction SilentlyContinue
+Add-Type -AssemblyName System.IO.Compression
+$file=[IO.File]::Open('C:\evidence.zip',[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+$zip=New-Object IO.Compression.ZipArchive($file,[IO.Compression.ZipArchiveMode]::Create,$false)
+try {
+ foreach($item in Get-ChildItem -LiteralPath $evidence -Recurse -File){
+  $inputFile=[IO.File]::Open($item.FullName,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+  $outputFile=$zip.CreateEntry($item.FullName.Substring($evidence.Length+1).Replace('\','/')).Open()
+  try{$inputFile.CopyTo($outputFile)}finally{$outputFile.Dispose();$inputFile.Dispose()}
+ }
+}finally{$zip.Dispose();$file.Dispose()}
+Invoke-WebRequest -Uri http://10.0.2.2:18080/evidence -Method Post -InFile C:\evidence.zip -UseBasicParsing -TimeoutSec 30|Out-Null
 Stop-Computer -Force
 '''
 (payload/'bootstrap.ps1').write_text(bootstrap)
