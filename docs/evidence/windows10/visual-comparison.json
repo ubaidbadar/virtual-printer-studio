@@ -1,0 +1,115 @@
+[
+  {
+    "scene": "01-printers",
+    "expected_size": [
+      1280,
+      760
+    ],
+    "actual_size": [
+      1280,
+      760
+    ],
+    "status": "different",
+    "changed_percent": 29.98,
+    "delta_over_8_percent": 27.376,
+    "mean_absolute_channel_error": 10.742
+  },
+  {
+    "scene": "02-new-printer",
+    "expected_size": [
+      1280,
+      760
+    ],
+    "actual_size": [
+      1280,
+      760
+    ],
+    "status": "different",
+    "changed_percent": 70.945,
+    "delta_over_8_percent": 18.609,
+    "mean_absolute_channel_error": 17.636
+  },
+  {
+    "scene": "03-printer-detail",
+    "expected_size": [
+      1280,
+      960
+    ],
+    "actual_size": [
+      1280,
+      960
+    ],
+    "status": "different",
+    "changed_percent": 78.913,
+    "delta_over_8_percent": 78.437,
+    "mean_absolute_channel_error": 72.136
+  },
+  {
+    "scene": "04-activity",
+    "expected_size": [
+      1280,
+      760
+    ],
+    "actual_size": [
+      1280,
+      760
+    ],
+    "status": "different",
+    "changed_percent": 59.26,
+    "delta_over_8_percent": 54.214,
+    "mean_absolute_channel_error": 11.087
+  },
+  {
+    "scene": "05-settings",
+    "expected_size": [
+      1280,
+      1200
+    ],
+    "actual_size": [
+      1280,
+      1200
+    ],
+    "status": "different",
+    "changed_percent": 52.976,
+    "delta_over_8_percent": 37.685,
+    "mean_absolute_channel_error": 15.04
+  },
+  {
+    "scene": "06-first-run",
+    "expected_size": [
+      1280,
+      760
+    ],
+    "actual_size": [
+      1280,
+      760
+    ],
+    "status": "different",
+    "changed_percent": 93.229,
+    "delta_over_8_percent": 92.973,
+    "mean_absolute_channel_error": 86.354
+  },
+  {
+    "scene": "07-printers-dark",
+    "expected_size": [
+      1280,
+      760
+    ],
+    "actual_size": [
+      1280,
+      760
+    ],
+    "status": "different",
+    "changed_percent": 32.861,
+    "delta_over_8_percent": 32.431,
+    "mean_absolute_channel_error": 10.923
+  },
+  {
+    "scene": "08-tray-and-toast",
+    "status": "not captured"
+  },
+  {
+    "scene": "09-logo",
+    "status": "not captured"
+  }
+]

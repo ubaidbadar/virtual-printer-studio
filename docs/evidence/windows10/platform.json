@@ -1,0 +1,14 @@
+{
+  "session_id": 1,
+  "source_commit": "02a5b55b2088301f267325605ba91b2bb08f88fe",
+  "caption": "Microsoft Windows 10 Enterprise LTSC Evaluation",
+  "processor_architecture": "AMD64",
+  "build": "19044",
+  "client_os": "Windows 10",
+  "interactive": true,
+  "expected": "windows-10-x64-vm",
+  "product_type": 1,
+  "version": "10.0.19044",
+  "cpu_architecture": 9,
+  "utc": "2026-11-17T07:30:23.4904883Z"
+}

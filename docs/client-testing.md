@@ -15,6 +15,8 @@ The Windows 11 GUI test also closes the native window, prints from an external p
 
 [Download the tested x64 package](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/43773442326/artifacts/14185413148). ZIP SHA256: `210f1613a819d204a72a371d567203651a24b8e7242a9d953c5d52028097d29b`. The executable has the Windows GUI subsystem, statically linked CRT and only inbox Windows DLL imports.
 
+Windows 10 evidence: [OS identity](evidence/windows10/platform.json), [successful guest result](evidence/windows10/result.json), [live GUI actions](evidence/windows10/gui-actions.json), and [visual differences](evidence/windows10/visual-comparison.json). The completed run independently parsed ten driver PDFs plus the GUI-generated test PDF. Its [full evidence artifact](https://github.com/ubaidbadar/virtual-printer-studio/actions/runs/44038396389/artifacts/14308857022) includes the actual PDFs and logs.
+
 ## How the tests run
 
 The `windows-latest` build runner is Windows Server. Its printing tests are useful, but do not establish Windows 10 or Windows 11 client compatibility.
@@ -51,5 +53,5 @@ Neither one proves all hardware, enterprise policies, application print producer
 
 - The GUI installer held a write handle on its PowerShell source. PowerShell could not read that file. The app now closes the writer, reopens a read-only lock, verifies the contents under that lock, and retains it through elevation. The native regression checks execution and refusal of another writer; the Windows 11 GUI test verifies actual printer creation.
 - The Windows LPR monitor encodes titles using an ANSI code page, losing Unicode characters. The receiver now queries the active Windows spooler job for its original UTF-16 title before acknowledging the transfer. Actual Unicode filenames and printed Unicode content passed on both client OSes.
-- Windows accessibility support was omitted from the application features. It is now enabled. Native UI Automation passed on Windows 11; the Windows 10 automation result remains separately tracked.
+- Windows accessibility support was omitted from the application features. It is now enabled. Native UI Automation passed on both client OSes. The Windows 10 harness now selects the actual application window by process ID, title and size instead of a 16-pixel helper window, and waits for native printer operations to complete before its next action.
 - Modal dialogs previously allowed background controls to remain interactive. Background controls are now disabled and the overlay consumes pointer input.
