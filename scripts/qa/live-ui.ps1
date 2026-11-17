@@ -57,11 +57,11 @@ function Set-Field([string]$Label,[string]$Value) {
 }
 try {
     $deadline=(Get-Date).AddSeconds(15)
-    do {$process.Refresh();if($process.MainWindowHandle -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 100}while((Get-Date) -lt $deadline)
-    if($process.MainWindowHandle -eq [IntPtr]::Zero){throw 'No live application window.'}
-    [VpsQaProcess]::ShowWindowAsync($process.MainWindowHandle,9)|Out-Null
-    [VpsQaProcess]::SetForegroundWindow($process.MainWindowHandle)|Out-Null
-    $root=[Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
+    do {$process.Refresh();$windowHandle=[VpsQaProcess]::FindAppWindow($process.Id,'Virtual Printer Studio');if($windowHandle -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 100}while((Get-Date) -lt $deadline)
+    if($windowHandle -eq [IntPtr]::Zero){throw 'No live application window.'}
+    [VpsQaProcess]::ShowWindowAsync($windowHandle,9)|Out-Null
+    [VpsQaProcess]::SetForegroundWindow($windowHandle)|Out-Null
+    $root=[Windows.Automation.AutomationElement]::FromHandle($windowHandle)
     Invoke-Control 'Get started'
     Invoke-Control '+ New printer'
     Set-Field 'Printer name' $name
@@ -85,7 +85,7 @@ public static class VpsQaWindow {
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
 }
 '@
-        $process.Refresh();$windowHandle=$process.MainWindowHandle
+        $process.Refresh();$windowHandle=[VpsQaProcess]::FindAppWindow($process.Id,'Virtual Printer Studio')
         if(![VpsQaWindow]::PostMessage($windowHandle,0x0010,[IntPtr]::Zero,[IntPtr]::Zero)){throw 'Cannot request native window close.'}
         $deadline=(Get-Date).AddSeconds(5)
         do {Start-Sleep -Milliseconds 100}while([VpsQaWindow]::IsWindowVisible($windowHandle) -and (Get-Date) -lt $deadline)

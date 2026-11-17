@@ -18,11 +18,11 @@ try {
     do {
         $process.Refresh()
         if($process.HasExited){throw 'Application exited before UI Automation connected.'}
-        if($process.MainWindowHandle -ne [IntPtr]::Zero){break}
+        $windowHandle=[VpsQaProcess]::FindAppWindow($process.Id,'Virtual Printer Studio')
+        if($windowHandle -ne [IntPtr]::Zero){break}
         Start-Sleep -Milliseconds 100
     } while((Get-Date) -lt $deadline)
-    if($process.MainWindowHandle -eq [IntPtr]::Zero){throw 'No application window.'}
-    $windowHandle=$process.MainWindowHandle
+    if($windowHandle -eq [IntPtr]::Zero){throw 'No titled application window with a usable client area.'}
     [VpsQaProcess]::ShowWindowAsync($windowHandle,9)|Out-Null
     [VpsQaProcess]::SetForegroundWindow($windowHandle)|Out-Null
     Start-Sleep -Milliseconds 500
