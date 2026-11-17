@@ -12,6 +12,10 @@ on:
         description: Successful Desktop checks run containing the x64 QA build
         required: true
         type: string
+      require_pixel_perfect:
+        description: Fail visual acceptance on any measured reference difference
+        type: boolean
+        default: true
 permissions:
   contents: read
   actions: read
@@ -44,11 +48,11 @@ jobs:
           $process=Start-Process -FilePath target/qa-package/virtual-printer-studio.exe -ArgumentList @('--ui-snapshot','target/client-evidence/visuals') -PassThru -RedirectStandardError target/client-evidence/visuals.log
           if (!$process.WaitForExit(120000)) { $process.Kill(); throw 'UI snapshot timed out.' }
           if ($process.ExitCode -ne 0) { Get-Content target/client-evidence/visuals.log; throw "UI snapshot export failed: $($process.ExitCode)" }
-      - name: Capture 125 and 150 percent DPI
+      - name: Capture 125, 150 and 200 percent DPI
         shell: pwsh
         run: |
           $env:SLINT_BACKEND='winit-software'
-          foreach ($scale in @('1.25','1.5')) {
+          foreach ($scale in @('1.25','1.5','2.0')) {
             $env:SLINT_SCALE_FACTOR=$scale
             $directory="target/client-evidence/visuals-scale-$scale"
             $process=Start-Process -FilePath target/qa-package/virtual-printer-studio.exe -ArgumentList @('--ui-snapshot',$directory) -PassThru -RedirectStandardError "$directory.log"
@@ -78,7 +82,13 @@ jobs:
         if: inputs.machine == 'windows-11-arm-x64-emulated'
         run: python scripts/qa/verify-pdfs.py target/client-evidence/live-ui/PDFs --expected-count 2 --marker "Your virtual printer is working."
       - name: Measure supplied design differences
-        run: python scripts/qa/compare-visuals.py --actual target/client-evidence/visuals --output target/client-evidence/comparison
+        shell: pwsh
+        env:
+          VPS_REQUIRE_PIXEL_PERFECT: ${{ inputs.require_pixel_perfect }}
+        run: |
+          $gate=@()
+          if ($env:VPS_REQUIRE_PIXEL_PERFECT -eq 'true') { $gate+='--require-pixel-perfect' }
+          python scripts/qa/compare-visuals.py --actual target/client-evidence/visuals --output target/client-evidence/comparison @gate
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -71,7 +71,8 @@ try {
     $created=$state.printers|Where-Object name -eq $name
     if(!(Get-Printer -Name $name -ErrorAction SilentlyContinue)){throw 'GUI did not create a native Windows printer.'}
     $created|ConvertTo-Json -Depth 8|Set-Content (Join-Path $OutputDirectory 'created-printer.json') -Encoding UTF8
-    Invoke-Control 'Test PDF'
+    Invoke-Control 'Details'
+    Invoke-Control 'Print test page'
     $state=Wait-State {param($s) @($s.printers|Where-Object {$_.name -eq $name -and $_.count -eq 1}).Count -eq 1}
     if(@(Get-ChildItem -LiteralPath $output -Filter '*.pdf').Count -ne 1){throw 'GUI test-page action did not save its PDF.'}
     $results.Add('GUI test-page action saved a real Windows driver PDF')
@@ -125,7 +126,50 @@ try{$doc.Print()}finally{$doc.Dispose()}
     $toggle.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
     Wait-State {param($s) $s.printers[0].enabled -eq $true}|Out-Null
     $results.Add('GUI switch paused and resumed the native printer')
+    # Open the production flyout through its keyboard command and operate real
+    # Windows accessibility controls. This exercises the live service callbacks.
+    Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;
+public static class VpsQaTray {
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls,string title);
+ [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+ [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+ [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
+ public static void Shortcut(){keybd_event(0x11,0,0,UIntPtr.Zero);keybd_event(0x10,0,0,UIntPtr.Zero);keybd_event(0x54,0,0,UIntPtr.Zero);keybd_event(0x54,0,2,UIntPtr.Zero);keybd_event(0x10,0,2,UIntPtr.Zero);keybd_event(0x11,0,2,UIntPtr.Zero);}
+}
+'@
+    function Open-Tray {
+        [VpsQaProcess]::SetForegroundWindow($windowHandle)|Out-Null
+        Start-Sleep -Milliseconds 200
+        [VpsQaTray]::Shortcut()
+        $deadline=(Get-Date).AddSeconds(15)
+        do {
+            $handle=[VpsQaTray]::FindWindow($null,'Virtual Printer Studio menu')
+            [uint32]$owner=0
+            if($handle -ne [IntPtr]::Zero){[VpsQaTray]::GetWindowThreadProcessId($handle,[ref]$owner)|Out-Null}
+            if($owner -eq $process.Id -and [VpsQaTray]::IsWindowVisible($handle)){
+                return [Windows.Automation.AutomationElement]::FromHandle($handle)
+            }
+            Start-Sleep -Milliseconds 100
+        }while((Get-Date) -lt $deadline)
+        throw 'Production tray flyout did not open through its keyboard command.'
+    }
+    $mainRoot=$root
+    $root=Open-Tray
+    Save-VpsUiDiagnostics $root $OutputDirectory 'live-tray'
+    Invoke-Control 'Pause all printers'
+    $root=$mainRoot
+    Wait-State {param($s) $s.printers[0].enabled -eq $false}|Out-Null
+    $root=Open-Tray
+    Invoke-Control 'Resume all printers'
+    $root=$mainRoot
+    Wait-State {param($s) $s.printers[0].enabled -eq $true}|Out-Null
+    $root=Open-Tray
+    Invoke-Control 'Settings'
+    $root=$mainRoot
+    Invoke-Control 'Printers'
     Invoke-Control 'Details'
+    $results.Add('Production tray flyout opened; pause/resume-all and Settings callbacks operated through native Windows UI Automation')
     Invoke-Control 'Delete printer'
     Invoke-Control 'Delete printer'
     Wait-State {param($s) @($s.printers).Count -eq 0}|Out-Null

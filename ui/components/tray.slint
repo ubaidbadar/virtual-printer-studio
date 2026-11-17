@@ -1,0 +1,54 @@
+import { Tokens } from "../theme/tokens.slint";
+import { ActivityView } from "../state.slint";
+import { StudioButton } from "controls.slint";
+export component TrayFlyout inherits Rectangle {
+    in property <int> ready;
+    in property <bool> any-enabled;
+    in property <bool> busy;
+    in property <[ActivityView]> recent;
+    callback open(); callback toggle-all(bool); callback file(string); callback settings(); callback quit();
+    background: Tokens.surface; border-radius: Tokens.radius; border-color: Tokens.control-border; border-width: Tokens.hairline;
+    Image { x: Tokens.s5; y: Tokens.px18; width: Tokens.s8; height: Tokens.s8; source: @image-url("../../assets/logo.svg"); }
+    Text { x: Tokens.px64; y: Tokens.s4; width: parent.width - Tokens.px80; height: Tokens.s6; text: @tr("Virtual Printer Studio"); color: Tokens.text; font-size: Tokens.section; font-weight: Tokens.font-semibold; }
+    Text { x: Tokens.px64; y: Tokens.px38; width: parent.width - Tokens.px80; height: Tokens.s5; text: @tr("{} printers ready", root.ready); color: Tokens.success-fg; font-size: Tokens.caption; }
+    Rectangle { x: Tokens.s2; y: Tokens.px65; width: parent.width - Tokens.s4; height: Tokens.hairline; background: Tokens.divider; }
+    StudioButton { x: Tokens.s2; y: Tokens.px72; width: parent.width - Tokens.s4; height: Tokens.px36; text: @tr("Open Virtual Printer Studio"); quiet: true; text-color: Tokens.text; font-size: Tokens.section; horizontal-padding: Tokens.s3; left-aligned: true; clicked => { root.open(); } }
+    StudioButton { x: Tokens.s2; y: Tokens.px108; width: parent.width - Tokens.s4; height: Tokens.px36; text: root.any-enabled ? @tr("Pause all printers") : @tr("Resume all printers"); quiet: true; text-color: Tokens.text; font-size: Tokens.section; horizontal-padding: Tokens.s3; left-aligned: true; enabled: !root.busy; clicked => { root.toggle-all(!root.any-enabled); } }
+    Rectangle { x: Tokens.s2; y: Tokens.px151; width: parent.width - Tokens.s4; height: Tokens.hairline; background: Tokens.divider; }
+    Text { x: Tokens.s5; y: Tokens.px160; height: Tokens.s5; width: parent.width - Tokens.px40; text: @tr("Recent files"); color: Tokens.secondary; font-size: Tokens.caption; font-weight: Tokens.font-semibold; }
+    for file[i] in root.recent: StudioButton { x: Tokens.s2; y: Tokens.px182 + i * Tokens.px28; width: parent.width - Tokens.s4; height: Tokens.px28; text: file.file; quiet: true; text-color: Tokens.secondary; font-size: Tokens.caption; horizontal-padding: Tokens.s3; left-aligned: true; clicked => { root.file(file.path); } }
+    if root.recent.length == 0: Text { x: Tokens.s5; y: Tokens.px190; width: parent.width - Tokens.px40; height: Tokens.s8; text: @tr("No files saved yet"); color: Tokens.secondary; font-size: Tokens.small; }
+    Rectangle { x: Tokens.s2; y: Tokens.px270; width: parent.width - Tokens.s4; height: Tokens.hairline; background: Tokens.divider; }
+    StudioButton { x: Tokens.s2; y: Tokens.px278; width: parent.width - Tokens.s4; height: Tokens.px36; text: @tr("Settings"); quiet: true; text-color: Tokens.text; font-size: Tokens.section; horizontal-padding: Tokens.s3; left-aligned: true; clicked => { root.settings(); } }
+    StudioButton { x: Tokens.s2; y: Tokens.px314; width: parent.width - Tokens.s4; height: Tokens.px36; text: @tr("Quit"); quiet: true; text-color: Tokens.text; font-size: Tokens.section; horizontal-padding: Tokens.s3; left-aligned: true; enabled: !root.busy; clicked => { root.quit(); } }
+}
+
+// This component previews the content contract; Windows owns the native toast chrome.
+export component ToastPreview inherits Rectangle {
+    in property <string> file;
+    in property <string> description;
+    background: Tokens.surface; border-width: Tokens.hairline; border-color: Tokens.control-border; border-radius: Tokens.radius;
+    Image { x: Tokens.s4; y: Tokens.s4; width: Tokens.icon; height: Tokens.icon; source: @image-url("../../assets/logo-small.svg"); }
+    Text { x: Tokens.px40; y: Tokens.s4; width: parent.width - Tokens.px90; height: Tokens.s5; text: @tr("Virtual Printer Studio"); color: Tokens.secondary; font-size: Tokens.caption; }
+    Text { x: parent.width - Tokens.px40; y: Tokens.s4; width: Tokens.s8; height: Tokens.s5; text: @tr("now"); color: Tokens.secondary; font-size: Tokens.caption; }
+    Text { x: Tokens.s4; y: Tokens.px42; width: parent.width - Tokens.s8; height: Tokens.s6; text: @tr("Saved {}", root.file); color: Tokens.text; font-size: Tokens.section; font-weight: Tokens.font-semibold; overflow: elide; }
+    Text { x: Tokens.s4; y: Tokens.px65; width: parent.width - Tokens.s8; height: Tokens.s5; text: root.description; color: Tokens.secondary; font-size: Tokens.small; }
+    StudioButton { x: Tokens.s4; y: Tokens.px94; height: Tokens.px30; text: @tr("Open"); font-size: Tokens.section; background: Tokens.neutral-bg; border-width: Tokens.px0; }
+    StudioButton { x: Tokens.px98; y: Tokens.px94; height: Tokens.px30; text: @tr("Show folder"); font-size: Tokens.section; background: Tokens.neutral-bg; border-width: Tokens.px0; }
+}
+
+export component TrayWindow inherits Window {
+    title: @tr("Virtual Printer Studio menu");
+    width: Tokens.px300; height: Tokens.px360; no-frame: true; always-on-top: true;
+    background: Tokens.surface; default-font-family: Tokens.font-family; default-font-size: Tokens.body;
+    in property <int> ready;
+    in property <bool> any-enabled;
+    in property <bool> busy;
+    in property <[ActivityView]> recent;
+    callback open(); callback toggle-all(bool); callback file(string); callback settings(); callback quit(); callback dismiss();
+    FocusScope { key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
+        TrayFlyout { ready: root.ready; any-enabled: root.any-enabled; busy: root.busy; recent: root.recent;
+            open => { root.open(); } toggle-all(value) => { root.toggle-all(value); } file(path) => { root.file(path); } settings => { root.settings(); } quit => { root.quit(); }
+        }
+    }
+}

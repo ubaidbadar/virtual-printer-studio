@@ -1,0 +1,34 @@
+import { Tokens } from "../theme/tokens.slint";
+import { StudioField, StudioButton, SettingsCard } from "../components/controls.slint";
+export component WelcomePage inherits Rectangle {
+    in-out property <string> name: @tr("My PDF Printer");
+    in-out property <string> folder;
+    in property <bool> busy;
+    in property <string> message;
+    callback create(); callback skip(); callback browse();
+    property <length> content-width: min(Tokens.px962, root.width - Tokens.px80);
+    property <length> content-left: (root.width - root.content-width) / 2;
+    property <length> content-top: max(Tokens.px48, (root.height - Tokens.px440) / 2 + Tokens.px1);
+    Rectangle { x: root.content-left; y: root.content-top; width: Tokens.px420; height: Tokens.px440;
+        Image { x: Tokens.px0; y: Tokens.px0; width: Tokens.px72; height: Tokens.px72; source: @image-url("../../assets/logo.svg"); }
+        Text { x: Tokens.px0; width: parent.width; y: Tokens.px98; height: Tokens.px78; text: @tr("Welcome to Virtual Printer Studio"); wrap: word-wrap; color: Tokens.text; font-size: Tokens.welcome-title; font-weight: Tokens.font-semibold; }
+        Text { x: Tokens.px0; width: parent.width; y: Tokens.px184; height: Tokens.px44; text: @tr("Turn any print job into a PDF that saves itself. Let's set up your\nfirst printer."); color: Tokens.secondary; font-size: Tokens.body; wrap: word-wrap; }
+        Text { x: Tokens.px0; width: parent.width; y: Tokens.px254; height: Tokens.s5; text: @tr("Printer name"); color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; }
+        StudioField { x: Tokens.px0; y: Tokens.px276; height: Tokens.control-height; width: parent.width; text <=> root.name; accessible-label: @tr("Printer name"); enabled: !root.busy; }
+        Text { x: Tokens.px0; width: parent.width; y: Tokens.px324; height: Tokens.s5; text: @tr("Save PDFs to"); color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; }
+        StudioField { x: Tokens.px0; y: Tokens.px346; height: Tokens.control-height; width: parent.width - Tokens.px116; text <=> root.folder; accessible-label: @tr("Output folder"); enabled: !root.busy; }
+        StudioButton { x: parent.width - Tokens.px108; y: Tokens.px346; width: Tokens.px108; text: @tr("Browse"); icon: @image-url("../../assets/icons/folder.svg"); enabled: !root.busy; clicked => { root.browse(); } }
+        StudioButton { x: Tokens.px0; y: Tokens.px406; text: @tr("Create my printer"); primary: true; enabled: !root.busy; clicked => { root.create(); } }
+        StudioButton { x: Tokens.px148; y: Tokens.px406; text: @tr("Skip for now"); label: @tr("Get started"); quiet: true; enabled: !root.busy; clicked => { root.skip(); } }
+        Text { x: Tokens.px0; width: parent.width; y: Tokens.px446; height: Tokens.px50; text: root.message; color: Tokens.danger-fg; font-size: Tokens.small; wrap: word-wrap; }
+    }
+    SettingsCard { x: root.content-left + Tokens.px484; y: root.content-top + Tokens.px76; width: root.content-width - Tokens.px484; height: Tokens.px288; border-radius: Tokens.panel-radius;
+        Text { x: Tokens.s7; y: Tokens.s6; height: Tokens.s7; text: @tr("How it works"); color: Tokens.text; font-size: Tokens.subheading; font-weight: Tokens.font-semibold; }
+        for step[i] in [{title: @tr("Print from any app"), description: @tr("Word, a browser, your accounting software, anything with a\nPrint button.")}, {title: @tr("Choose your printer"), description: @tr("Pick the one you just created from the list.")}, {title: @tr("Find your PDF"), description: @tr("It appears in your folder as Invoice_2026-11-15_14-32.pdf. No\nsave dialog.")}]: Rectangle {
+            x: Tokens.s7; y: i == 0 ? Tokens.px72 : i == 1 ? Tokens.px148 : Tokens.px208; width: parent.width - Tokens.px56; height: Tokens.px60;
+            Rectangle { x: Tokens.px0; y: Tokens.px0; width: Tokens.s7; height: Tokens.s7; border-radius: Tokens.px14; background: Tokens.accent; Text { text: i + 1; color: Tokens.white; font-size: Tokens.body; font-weight: Tokens.font-semibold; horizontal-alignment: center; vertical-alignment: center; } }
+            Text { x: Tokens.px42; y: Tokens.px0; height: Tokens.s5; text: step.title; color: Tokens.text; font-size: Tokens.body; font-weight: Tokens.font-semibold; }
+            Text { x: Tokens.px42; y: Tokens.s5; height: Tokens.px40; width: parent.width - Tokens.px42; text: step.description; color: Tokens.secondary; font-size: Tokens.small; wrap: word-wrap; }
+        }
+    }
+}

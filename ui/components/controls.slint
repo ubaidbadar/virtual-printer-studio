@@ -1,0 +1,165 @@
+import { ComboBox } from "std-widgets.slint";
+import { Tokens } from "../theme/tokens.slint";
+
+export component StudioSelect inherits Rectangle {
+    in property <[string]> model;
+    in property <bool> enabled: true;
+    in-out property <int> current-index;
+    out property <string> current-value: select.current-value;
+    in property <string> label: root.current-value;
+    callback selected(int);
+    height: Tokens.control-height; width: Tokens.px170;
+    forward-focus: select;
+    select := ComboBox { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: parent.height; model: root.model; enabled: root.enabled; current-index <=> root.current-index; accessible-label: root.label; selected => { root.selected(self.current-index); } }
+    Rectangle { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: parent.height; border-width: Tokens.hairline; border-color: Tokens.control-border; border-radius: Tokens.control-radius; background: transparent; }
+}
+
+export component StudioField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder-text;
+    in property <string> label: root.placeholder-text;
+    in property <image> leading-icon;
+    in property <bool> enabled: true;
+    in property <bool> auto-focus;
+    callback edited(string); callback accepted(string);
+    height: Tokens.control-height;
+    border-width: Tokens.hairline; border-color: Tokens.control-border;
+    border-radius: Tokens.control-radius; background: Tokens.surface;
+    accessible-role: text-input; accessible-label: root.label;
+    accessible-enabled: root.enabled; accessible-value <=> root.text;
+    accessible-action-set-value(value) => { if root.enabled { root.text = value; root.edited(value); } }
+    accessible-action-set-selection-offsets(anchor, focus) => { input.set-selection-offsets(anchor, focus); }
+    forward-focus: input;
+    init => { if root.auto-focus { input.focus(); } }
+    changed enabled => { if root.enabled && root.auto-focus { input.focus(); } }
+    property <length> inset: root.leading-icon.width > 0 ? Tokens.px34 : Tokens.px10;
+    if root.leading-icon.width > 0: Image { x: Tokens.px10; y: Tokens.s2; width: Tokens.icon; height: Tokens.icon; source: root.leading-icon; colorize: Tokens.secondary; TouchArea { enabled: root.enabled; clicked => { input.focus(); } } }
+    if root.text == "": Text { x: root.inset; y: Tokens.px0; width: parent.width - root.inset - Tokens.px10; height: parent.height; text: root.placeholder-text; color: Tokens.secondary; font-size: Tokens.body; vertical-alignment: center; }
+    Rectangle { x: root.inset; y: Tokens.px0; width: parent.width - root.inset - Tokens.px10; height: parent.height; clip: true;
+        input := TextInput {
+            property <length> offset;
+            x: min(Tokens.px0, max(parent.width - self.width, self.offset)); y: Tokens.px0;
+            width: max(parent.width - self.text-cursor-width, self.preferred-width); height: parent.height;
+            single-line: true; vertical-alignment: center; font-size: Tokens.body;
+            color: Tokens.text; selection-background-color: Tokens.accent; selection-foreground-color: Tokens.white;
+            enabled: root.enabled; text <=> root.text; accessible-role: none;
+            cursor-position-changed(position) => {
+                if position.x + self.offset < Tokens.px0 { self.offset = -position.x; }
+                else if position.x + self.offset > parent.width - self.text-cursor-width { self.offset = parent.width - position.x - self.text-cursor-width; }
+            }
+            edited => { root.edited(self.text); }
+            accepted => { root.accepted(self.text); }
+        }
+    }
+    Rectangle { visible: input.has-focus; x: Tokens.control-radius; y: parent.height - Tokens.px2; width: parent.width - 2 * Tokens.control-radius; height: Tokens.px2; background: Tokens.accent; }
+}
+
+export component StudioButton inherits Rectangle {
+    in property <string> text;
+    in property <string> label: root.text;
+    in property <image> icon;
+    in property <image> trailing-icon;
+    in property <bool> primary;
+    in property <bool> quiet;
+    in property <bool> left-aligned;
+    in property <bool> enabled: true;
+    in property <length> font-size: Tokens.body;
+    in property <length> horizontal-padding: root.text == "" ? Tokens.s2 : Tokens.s4;
+    in property <color> text-color: root.primary ? Tokens.white : root.quiet ? Tokens.accent-text : Tokens.text;
+    in property <color> icon-color: root.primary ? Tokens.white : Tokens.text;
+    callback clicked();
+    width: max(Tokens.control-height, content.min-width);
+    height: Tokens.control-height;
+    horizontal-stretch: 0; vertical-stretch: 0;
+    border-radius: Tokens.control-radius;
+    border-width: root.quiet || root.primary ? Tokens.px0 : Tokens.hairline;
+    border-color: Tokens.control-border;
+    background: root.primary ? Tokens.accent : touch.has-hover && root.enabled ? Tokens.hover : root.quiet ? transparent : Tokens.surface;
+    opacity: root.enabled ? 1 : 0.55;
+    accessible-role: button; accessible-label: root.label; accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { focus.focus(); root.clicked(); } }
+    forward-focus: focus;
+    content := HorizontalLayout {
+        x: Tokens.px0; y: Tokens.px0; width: parent.width; height: parent.height;
+        padding-left: root.horizontal-padding; padding-right: root.horizontal-padding; spacing: Tokens.s2; alignment: root.left-aligned ? start : center;
+        if root.icon.width > 0: Image { width: Tokens.icon; min-height: Tokens.icon; source: root.icon; colorize: root.icon-color; }
+        if root.text != "": Text { text: root.text; color: root.text-color; font-size: root.font-size; vertical-alignment: center; }
+        if root.trailing-icon.width > 0: Rectangle { horizontal-stretch: 1; }
+        if root.trailing-icon.width > 0: Image { width: Tokens.icon; min-height: Tokens.icon; source: root.trailing-icon; colorize: root.icon-color; }
+    }
+    Rectangle { visible: focus.has-focus; border-width: Tokens.hairline; border-color: Tokens.accent; border-radius: Tokens.control-radius; background: transparent; }
+    touch := TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.clicked(); } }
+    focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { root.clicked(); return accept; } return reject; } }
+}
+export component StudioToggle inherits Rectangle {
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    in property <string> label;
+    callback toggled(bool);
+    width: Tokens.toggle-width; height: Tokens.control-height;
+    horizontal-stretch: 0; vertical-stretch: 0;
+    accessible-role: switch; accessible-label: root.label; accessible-enabled: root.enabled;
+    accessible-checkable: true; accessible-checked: root.checked;
+    accessible-action-default => { if root.enabled { focus.focus(); root.checked = !root.checked; root.toggled(root.checked); } }
+    forward-focus: focus;
+    Rectangle {
+        y: (parent.height - self.height) / 2; height: Tokens.toggle-height;
+        background: root.checked ? Tokens.accent : Tokens.surface;
+        border-width: root.checked ? Tokens.px0 : Tokens.hairline;
+        border-color: Tokens.secondary; border-radius: Tokens.toggle-height / 2;
+        opacity: root.enabled ? 1 : 0.55;
+        Rectangle { x: root.checked ? parent.width - self.width - Tokens.s1 : Tokens.s1; y: Tokens.s1; width: Tokens.toggle-knob; height: Tokens.toggle-knob; border-radius: Tokens.toggle-knob / 2; background: root.checked ? Tokens.white : Tokens.neutral-fg; }
+    }
+    Rectangle { visible: focus.has-focus; border-width: Tokens.hairline; border-color: Tokens.accent; border-radius: Tokens.control-radius; background: transparent; }
+    TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.checked = !root.checked; root.toggled(root.checked); } }
+    focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == Key.Space || event.text == Key.Return { root.checked = !root.checked; root.toggled(root.checked); return accept; } return reject; } }
+}
+export component StatusBadge inherits Rectangle {
+    in property <string> text;
+    in property <int> tone;
+    height: Tokens.px18; width: badge-text.preferred-width + Tokens.s4;
+    horizontal-stretch: 0; vertical-stretch: 0; border-radius: Tokens.pill-radius;
+    background: root.tone == 1 ? Tokens.success-bg : root.tone == 2 ? Tokens.danger-bg : Tokens.neutral-bg;
+    accessible-role: AccessibleRole.text; accessible-label: root.text;
+    badge-text := Text { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: parent.height; text: root.text; color: root.tone == 1 ? Tokens.success-fg : root.tone == 2 ? Tokens.danger-fg : Tokens.neutral-fg; font-size: Tokens.caption; font-weight: Tokens.font-semibold; horizontal-alignment: center; vertical-alignment: center; }
+}
+export component FilterChip inherits StudioButton {
+    in property <bool> selected;
+    primary: root.selected; border-radius: Tokens.pill-radius;
+    font-size: Tokens.small;
+    accessible-checkable: true; accessible-checked: root.selected;
+}
+export component SectionTitle inherits Text { height: Tokens.s5; color: Tokens.text; font-size: Tokens.section; font-weight: Tokens.font-semibold; }
+export component StudioHint inherits Rectangle {
+    in property <string> message;
+    width: Tokens.px300; height: Tokens.px66;
+    background: Tokens.surface; border-color: Tokens.control-border; border-width: Tokens.hairline; border-radius: Tokens.control-radius;
+    Text { x: Tokens.s2; y: Tokens.s2; width: parent.width - Tokens.s4; height: parent.height - Tokens.s4; text: root.message; color: Tokens.text; font-size: Tokens.small; wrap: word-wrap; vertical-alignment: center; }
+}
+export component SettingsCard inherits Rectangle { background: Tokens.surface; border-width: Tokens.hairline; border-color: Tokens.border; border-radius: Tokens.radius; }
+export component SettingRow inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+    in property <bool> last;
+    height: Tokens.row-height;
+    Rectangle { visible: !root.last; y: parent.height - Tokens.hairline; height: Tokens.hairline; background: Tokens.divider; }
+    Text { x: Tokens.s4; y: root.description == "" ? Tokens.px0 : Tokens.s3; height: root.description == "" ? parent.height : Tokens.s5; width: parent.width - Tokens.s8; text: root.title; color: Tokens.text; font-size: Tokens.body; vertical-alignment: center; }
+    Text { x: Tokens.s4; y: Tokens.s7; height: Tokens.s5; width: parent.width - Tokens.s8; text: root.description; color: Tokens.secondary; font-size: Tokens.caption; }
+    @children
+}
+export component NavItem inherits Rectangle {
+    in property <string> text; in property <image> icon;
+    in property <bool> selected; in property <bool> enabled: true;
+    callback clicked();
+    height: Tokens.nav-height; border-radius: Tokens.nav-radius;
+    background: root.selected ? Tokens.nav-active : touch.has-hover ? Tokens.hover : transparent;
+    accessible-role: button; accessible-label: root.text; accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    forward-focus: focus;
+    Rectangle { visible: root.selected; x: Tokens.px0; y: Tokens.s3; width: Tokens.px3; height: Tokens.px18; border-radius: Tokens.px2; background: Tokens.accent; }
+    Image { x: Tokens.s4; y: Tokens.s3; width: Tokens.icon; height: Tokens.icon; source: root.icon; colorize: Tokens.text; }
+    Text { x: Tokens.px44; y: Tokens.px0; width: parent.width - Tokens.px56; height: parent.height; text: root.text; color: Tokens.text; font-size: Tokens.body; font-weight: root.selected ? Tokens.font-semibold : Tokens.font-normal; vertical-alignment: center; }
+    Rectangle { visible: focus.has-focus; background: transparent; border-color: Tokens.accent; border-width: Tokens.hairline; border-radius: Tokens.nav-radius; }
+    touch := TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.clicked(); } }
+    focus := FocusScope { enabled: root.enabled; key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { root.clicked(); return accept; } return reject; } }
+}

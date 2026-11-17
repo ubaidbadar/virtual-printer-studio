@@ -31,6 +31,8 @@ pub struct Activity {
     pub job_id: String,
     #[serde(default)]
     pub created_unix: i64,
+    #[serde(default)]
+    pub size_bytes: u64,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -45,6 +47,7 @@ pub struct State {
     pub startup: bool,
     pub theme: i32,
     pub capture_port: u16,
+    pub history_days: u32,
 }
 impl Default for State {
     fn default() -> Self {
@@ -59,7 +62,17 @@ impl Default for State {
             startup: false,
             theme: 2,
             capture_port: 0,
+            history_days: 90,
         }
+    }
+}
+/// Retention applies only to history metadata. Unknown legacy dates are retained.
+pub fn prune_activity(state: &mut State, now: i64) {
+    if state.history_days != 0 {
+        let cutoff = now.saturating_sub(i64::from(state.history_days) * 86_400);
+        state
+            .activity
+            .retain(|entry| entry.created_unix == 0 || entry.created_unix >= cutoff);
     }
 }
 pub fn validate(state: &State, id: &str, name: &str, folder: &Path, pattern: &str) -> Result<()> {
@@ -182,6 +195,45 @@ fn pdf_bytes() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn history_retention_keeps_recent_and_undated_metadata() {
+        let now = 2_000_000_000;
+        let row = |timestamp| Activity {
+            printer: String::new(),
+            file: String::new(),
+            status: "Saved".into(),
+            path: "existing.pdf".into(),
+            printer_id: String::new(),
+            job_id: String::new(),
+            created_unix: timestamp,
+            size_bytes: 100,
+        };
+        let mut state = State {
+            activity: vec![
+                row(0),
+                row(now - 91 * 86_400),
+                row(now - 90 * 86_400),
+                row(now),
+            ],
+            ..State::default()
+        };
+        prune_activity(&mut state, now);
+        assert_eq!(
+            state
+                .activity
+                .iter()
+                .map(|a| a.created_unix)
+                .collect::<Vec<_>>(),
+            vec![0, now - 90 * 86_400, now]
+        );
+        state.history_days = 0;
+        state.activity.push(row(1));
+        prune_activity(&mut state, now);
+        assert_eq!(state.activity.len(), 4);
+        let legacy:State=serde_json::from_str(r#"{"activity":[{"printer":"Old","file":"old.pdf","path":"old.pdf","status":"Saved"}]}"#).expect("old schema");
+        assert_eq!(legacy.history_days, 90);
+        assert_eq!(legacy.activity[0].size_bytes, 0);
+    }
     #[test]
     fn pdf_offsets_are_valid() {
         let bytes = pdf_bytes();

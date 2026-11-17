@@ -1,4 +1,13 @@
 fn main() {
+    #[cfg(windows)]
+    {
+        winresource::WindowsResource::new()
+            .set_icon("assets/logo.ico")
+            .set("ProductName", "Virtual Printer Studio")
+            .set("FileDescription", "Virtual Printer Studio")
+            .compile()
+            .expect("embed Windows application icon");
+    }
     slint_build::compile_with_config(
         "ui/app.slint",
         slint_build::CompilerConfiguration::new()

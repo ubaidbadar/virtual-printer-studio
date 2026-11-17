@@ -51,11 +51,12 @@ try {
         $results.Add("Invoked $Label via native Windows UI Automation")
     }
     Invoke-Button 'Activity'
-    Find-Button 'Retry pending'|Out-Null
+    Invoke-Button 'Activity actions'
+    Invoke-Button 'Retry pending'
     Invoke-Button 'Presets'
     Find-Button 'Use preset'|Out-Null
     Invoke-Button 'Settings'
-    Find-Button 'Save settings'|Out-Null
+    Find-Button 'Copy'|Out-Null
     Invoke-Button 'Printers'
     Invoke-Button '+ New printer'
     Find-Button 'Save printer'|Out-Null

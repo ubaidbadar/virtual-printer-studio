@@ -1,36 +1,62 @@
-import { Button, LineEdit, ListView, ComboBox, Switch, ScrollView } from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 import { Tokens } from "theme/tokens.slint";
 import { PrinterCard, PrinterView } from "components/card.slint";
-export { Tokens, PrinterView }
-export struct ActivityView { printer: string, file: string, status: string, path: string, printer-id: string, failed: bool, date: string }
+import { StudioHint, StudioSelect, StudioField, StudioButton, StudioToggle, FilterChip, NavItem } from "components/controls.slint";
+import { ActivityView } from "state.slint";
+import { ActivityPage } from "pages/activity.slint";
+import { SettingsPage } from "pages/settings.slint";
+import { DetailPage } from "pages/detail.slint";
+import { WelcomePage } from "pages/welcome.slint";
+import { BrandBoard, TrayBoard } from "pages/brand.slint";
+import { TrayWindow } from "components/tray.slint";
+export { Tokens, PrinterView, ActivityView }
+export { TrayWindow }
+
 export component AppTray inherits SystemTrayIcon {
-        visible: true;
-        callback reopen(); callback retry(); callback settings(); callback quit();
-        icon: @image-url("../assets/logo.svg");
-        tooltip: @tr("Virtual Printer Studio — PDF capture");
-        clicked => { root.reopen(); }
-        Menu {
-            MenuItem { title: @tr("Open Virtual Printer Studio"); activated => { root.reopen(); } }
-            MenuItem { title: @tr("Retry pending PDFs"); activated => { root.retry(); } }
-            MenuItem { title: @tr("Settings"); activated => { root.settings(); } }
-            MenuItem { title: @tr("Quit"); activated => { root.quit(); } }
-        }
+    visible: true;
+    callback reopen(); callback popup(); callback retry(); callback settings(); callback quit();
+    icon: @image-url("../assets/logo-small.svg");
+    tooltip: @tr("Virtual Printer Studio — PDF capture");
+    clicked => { root.popup(); }
+    Menu {
+        MenuItem { title: @tr("Open Virtual Printer Studio"); activated => { root.reopen(); } }
+        MenuItem { title: @tr("Retry pending PDFs"); activated => { root.retry(); } }
+        MenuItem { title: @tr("Settings"); activated => { root.settings(); } }
+        MenuItem { title: @tr("Quit"); activated => { root.quit(); } }
     }
+}
 export component AppWindow inherits Window {
     icon: @image-url("../assets/logo.svg");
-    title: @tr("Virtual Printer Studio"); preferred-width: 1220px; preferred-height: 840px; min-width: 960px; min-height: 700px;
-    background: Tokens.bg; default-font-size: 14px;
+    title: @tr("Virtual Printer Studio");
+    preferred-width: Tokens.px1280; preferred-height: Tokens.px760; min-width: Tokens.px960; min-height: Tokens.px660;
+    background: Tokens.bg; default-font-size: Tokens.body; default-font-family: Tokens.font-family;
     in property <[PrinterView]> printers;
     in property <[[PrinterView]]> printer-rows;
-    out property <int> columns: root.width >= 1150px ? 3 : 2;
-    out property <length> card-width: (root.width - 278px - (root.columns - 1) * Tokens.gap) / root.columns;
-    changed columns => { root.refresh(); }
     in property <[ActivityView]> activity;
+    in property <[ActivityView]> recent-files;
+    in property <[ActivityView]> tray-files;
+    in property <bool> any-enabled;
+    in-out property <int> showcase;
+    out property <int> columns: root.width >= Tokens.px1150 ? 3 : 2;
+    out property <length> card-width: (root.width - Tokens.nav-width - Tokens.page-gutter - Tokens.page-right - (root.columns - 1) * Tokens.gap) / root.columns;
+    changed columns => { root.refresh(); }
     in property <bool> capture-running; in property <int> capture-port;
     in property <int> printer-count; in property <int> saved-count; in property <int> queued-count;
+    in property <int> active-count; in property <int> attention-count; in property <int> failed-count;
+    in property <string> saved-space: "0 KB";
+    in property <string> attention-id; in property <string> attention-name; in property <string> attention-folder;
+    in property <string> detail-status: "Ready";
+    in property <bool> detail-enabled: true;
+    in property <bool> detail-folder-ok; in property <bool> detail-write-ok;
+    in property <bool> detail-service-ok; in property <bool> detail-space-ok;
+    in property <string> detail-free-space: @tr("Storage available");
+    in-out property <string> pattern-preview;
     in-out property <int> page: 0;
     in-out property <bool> editor: false;
-    property <bool> modal-open: root.welcome || root.editor || root.confirm-clear;
+    in-out property <bool> focus-name;
+    changed editor => { if !root.editor || root.edit-id != "" { keys.focus(); } }
+    property <bool> detail-open: root.editor && root.edit-id != "";
+    property <bool> modal-open: root.welcome || (root.editor && root.edit-id == "") || root.confirm-clear || root.confirm-delete;
     in-out property <bool> confirm-delete: false;
     in-out property <bool> confirm-clear: false;
     in-out property <bool> welcome: true;
@@ -41,175 +67,231 @@ export component AppWindow inherits Window {
     in-out property <bool> notifications: true;
     in-out property <bool> startup;
     in-out property <int> theme: 2;
+    in-out property <int> history-index: 1;
     in-out property <bool> monthly;
     in-out property <bool> open-after;
+    in-out property <bool> start-saving: true;
+    in-out property <bool> advanced;
     in-out property <string> edit-id;
     in-out property <string> printer-name;
+    in-out property <string> welcome-name: @tr("My PDF Printer");
     in-out property <string> folder;
     in-out property <string> pattern: "{title}_{date}_{counter}";
+    changed pattern => { root.preview-pattern(); }
     in-out property <string> message;
     in-out property <string> search;
     in-out property <int> filter;
     in-out property <string> activity-search;
     in-out property <int> activity-filter;
+    in property <[string]> activity-printers;
+    in-out property <int> activity-printer;
+    in-out property <int> activity-date;
     in-out property <string> default-folder;
     in-out property <string> diagnostics;
-    callback refresh();
-    callback save-printer(string, string, string, string, bool, bool);
-    callback select-printer(string);
-    callback toggle-printer(string, bool);
-    callback test-printer(string);
-    callback delete-printer(string);
-    callback repair-printer(string);
-    callback browse(bool);
-    callback open-path(string);
-    callback show-folder(string);
-    callback export-backup(); callback import-backup();
-    callback save-settings(); callback retry(); callback clear-history();
-    callback copy-diagnostics(); callback open-logs();
-    callback dismiss-welcome(); callback reopen(); callback quit();
+    callback refresh(); callback preview-pattern();
+    callback save-printer(string, string, string, string, bool, bool, bool);
+    callback select-printer(string); callback choose-folder(string);
+    callback toggle-printer(string, bool); callback test-printer(string); callback delete-printer(string); callback repair-printer(string);
+    callback toggle-all-printers(bool);
+    callback show-tray();
+    callback browse(bool); callback open-path(string); callback show-folder(string);
+    callback export-backup(); callback import-backup(); callback save-settings(); callback retry(); callback clear-history();
+    callback copy-diagnostics(); callback open-logs(); callback dismiss-welcome(); callback reopen(); callback quit();
+    function new-printer() {
+        root.edit-id = ""; root.printer-name = ""; root.folder = root.default-folder;
+        root.pattern = "{title}_{date}_{counter}"; root.monthly = false; root.open-after = false;
+        root.message = ""; root.confirm-delete = false; root.advanced = false; root.start-saving = true; root.focus-name = true; root.editor = true;
+    }
+    function save-profile() { root.save-printer(root.edit-id, root.printer-name, root.folder, root.pattern, root.monthly, root.open-after, root.start-saving); }
+    function navigate(page: int) { root.editor = false; root.page = page; root.message = ""; }
+    keys := FocusScope { x: Tokens.px0; y: Tokens.px0; width: root.width; height: root.height;
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.modifiers.control && event.modifiers.shift && (event.text == "t" || event.text == "T") {
+                root.show-tray(); return accept;
+            }
+            if event.text == Key.Escape {
+                if root.confirm-delete { root.confirm-delete = false; return accept; }
+                if root.confirm-clear { root.confirm-clear = false; return accept; }
+                if root.editor { root.editor = false; root.message = ""; return accept; }
+            }
+            return reject;
+        }
     diagnostic-copy := TextInput { visible: false; text: root.diagnostics; read-only: true; }
-    HorizontalLayout {
-        spacing: 0px;
-        Rectangle {
-            width: 222px; background: Tokens.bg;
-            VerticalLayout {
-                padding: 12px; spacing: 8px;
-                Text { text: @tr("Virtual Printer Studio"); color: Tokens.text; font-weight: 600; height: 48px; }
-                Button { enabled: !root.modal-open; text: @tr("Printers"); primary: root.page == 0; clicked => { root.page = 0; } }
-                Button { enabled: !root.modal-open; text: @tr("Activity"); primary: root.page == 1; clicked => { root.page = 1; } }
-                Button { enabled: !root.modal-open; text: @tr("Presets"); primary: root.page == 2; clicked => { root.page = 2; } }
+    if root.showcase == 2: BrandBoard { }
+    if root.showcase == 1: TrayBoard { recent: root.tray-files; }
+    if root.showcase == 0 && root.welcome: WelcomePage {
+        name <=> root.welcome-name; folder <=> root.default-folder; busy: root.busy; message: root.message;
+        browse => { root.browse(true); }
+        skip => { root.dismiss-welcome(); }
+        create => { root.save-printer("", root.welcome-name, root.default-folder, "{title}_{date}_{counter}", false, false, true); }
+    }
+    if root.showcase == 0 && !root.welcome: Rectangle {
+        Rectangle { x: Tokens.px0; y: Tokens.px0; height: parent.height; width: Tokens.nav-width;
+            VerticalLayout { padding: Tokens.s2; spacing: Tokens.px2;
+                NavItem { text: @tr("Printers"); icon: @image-url("../assets/icons/printer.svg"); selected: root.page == 0; enabled: !root.modal-open; clicked => { root.navigate(0); } }
+                NavItem { text: @tr("Activity"); icon: @image-url("../assets/icons/activity.svg"); selected: root.page == 1; enabled: !root.modal-open; clicked => { root.navigate(1); } }
+                NavItem { text: @tr("Presets"); icon: @image-url("../assets/icons/presets.svg"); selected: root.page == 2; enabled: !root.modal-open; clicked => { root.navigate(2); } }
                 Rectangle { vertical-stretch: 1; }
-                Text { text: @tr("{} pending · v0.2", root.queued-count); color: Tokens.secondary; font-size: 12px; }
-                Button { enabled: !root.modal-open; text: @tr("Settings"); primary: root.page == 3; clicked => { root.page = 3; } }
+                NavItem { text: @tr("Settings"); icon: @image-url("../assets/icons/settings.svg"); selected: root.page == 3; enabled: !root.modal-open; clicked => { root.navigate(3); } }
             }
         }
-        VerticalLayout {
-            padding: 28px; spacing: Tokens.gap;
-            Text { text: root.page == 0 ? @tr("Printers") : root.page == 1 ? @tr("Activity") : root.page == 2 ? @tr("Presets") : @tr("Settings"); color: Tokens.text; font-size: 28px; font-weight: 600; }
-            Text { text: @tr("{} printers · {} PDFs saved · {} pending", root.printer-count, root.saved-count, root.queued-count); color: Tokens.secondary; }
-            if !root.native-available: Text { text: @tr("System printer installation requires Windows. Profile management and PDF delivery are available here."); color: Tokens.secondary; wrap: word-wrap; }
-            if root.busy || root.message != "": Rectangle {
-                min-height: 56px; background: Tokens.surface; border-radius: Tokens.radius;
-                HorizontalLayout { padding: 12px; spacing: 12px;
-                    Text { text: root.busy ? @tr("Working… Windows may ask for administrator access.") : root.message; color: Tokens.text; wrap: word-wrap; horizontal-stretch: 1; }
-                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("Dismiss"); clicked => { root.message = ""; } }
-                }
+        main := Rectangle { x: Tokens.nav-width + Tokens.page-gutter; y: Tokens.s4; width: parent.width - self.x - Tokens.page-right; height: parent.height - Tokens.s8;
+            if root.detail-open: DetailPage {
+                name <=> root.printer-name; folder <=> root.folder; pattern <=> root.pattern; monthly <=> root.monthly; open-after <=> root.open-after; notifications <=> root.notifications;
+                preview: root.pattern-preview; status: root.detail-status; enabled: root.detail-enabled;
+                folder-ok: root.detail-folder-ok; write-ok: root.detail-write-ok; capture-ok: root.detail-service-ok; space-ok: root.detail-space-ok;
+                free-space: root.detail-free-space; busy: root.busy || root.modal-open; native-available: root.native-available; recent: root.recent-files;
+                back => { root.editor = false; root.message = ""; }
+                browse => { root.browse(false); }
+                save => { root.save-profile(); }
+                test => { root.test-printer(root.edit-id); }
+                open => { root.open-path(root.folder); }
+                file(path) => { root.open-path(path); }
+                toggle(value) => { root.toggle-printer(root.edit-id, value); }
+                repair => { root.repair-printer(root.edit-id); }
+                delete => { root.confirm-delete = true; root.message = ""; }
+                notify => { root.save-settings(); }
             }
-            if root.page == 0: VerticalLayout {
-                spacing: Tokens.gap;
-                HorizontalLayout { spacing: 8px;
-                    LineEdit { enabled: !root.modal-open; placeholder-text: @tr("Search printers"); text <=> root.search; edited => { root.refresh(); } }
-                    ComboBox { enabled: !root.modal-open; model: [@tr("All printers"), @tr("Active"), @tr("Needs attention")]; current-index <=> root.filter; selected => { root.refresh(); } }
-                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("+ New printer"); primary: true; clicked => { root.edit-id = ""; root.printer-name = ""; root.folder = root.default-folder; root.pattern = "{title}_{date}_{counter}"; root.monthly = false; root.open-after = false; root.message = ""; root.confirm-delete = false; root.editor = true; } }
+            if !root.detail-open: Rectangle {
+                Text { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: Tokens.px38; text: root.page == 0 ? @tr("Printers") : root.page == 1 ? @tr("Activity") : root.page == 2 ? @tr("Presets") : @tr("Settings"); color: Tokens.text; font-size: Tokens.title; font-weight: Tokens.font-semibold; }
+                Text { x: Tokens.px0; width: parent.width; y: Tokens.px38; height: Tokens.s5; text: root.page == 0 ? @tr("{} virtual printers · {} PDFs saved today", root.printer-count, root.saved-count) : root.page == 1 ? @tr("Everything your printers have saved") : root.page == 2 ? @tr("Start with a setup that works for you") : @tr("Make Virtual Printer Studio work your way"); color: Tokens.secondary; font-size: Tokens.body; }
+                if root.page == 0: HorizontalLayout { x: parent.width - Tokens.px409; y: Tokens.px23; width: Tokens.px409; height: Tokens.control-height; spacing: Tokens.s4;
+                    StudioField { width: Tokens.px260; height: Tokens.control-height; enabled: !root.modal-open; leading-icon: @image-url("../assets/icons/search.svg"); placeholder-text: @tr("Search printers"); text <=> root.search; edited => { root.refresh(); } }
+                    StudioButton { width: Tokens.px133; text: @tr("New printer"); label: @tr("+ New printer"); icon: @image-url("../assets/icons/plus.svg"); primary: true; enabled: !root.modal-open && !root.busy; clicked => { root.new-printer(); } }
                 }
-                if root.printers.length == 0: VerticalLayout { alignment: center;
-                    Text { text: @tr("Your PDFs start here"); color: Tokens.text; font-size: 24px; horizontal-alignment: center; }
-                    Text { text: @tr("Create a printer, or adjust your search."); color: Tokens.secondary; horizontal-alignment: center; }
+                if root.page == 1: HorizontalLayout { x: parent.width - Tokens.px504; y: root.width < Tokens.px1150 ? Tokens.px75 : Tokens.px23; width: Tokens.px504; height: Tokens.control-height; spacing: Tokens.s3;
+                    StudioField { width: Tokens.px220; enabled: !root.modal-open; leading-icon: @image-url("../assets/icons/search.svg"); placeholder-text: @tr("Search files"); text <=> root.activity-search; edited => { root.refresh(); } }
+                    StudioSelect { width: Tokens.px140; enabled: !root.modal-open; model: root.activity-printers; current-index <=> root.activity-printer; selected => { root.refresh(); } }
+                    StudioButton { width: Tokens.px120; text: root.activity-date == 0 ? @tr("Today") : root.activity-date == 1 ? @tr("All dates") : @tr("Last 7 days"); label: @tr("Activity actions"); trailing-icon: @image-url("../assets/icons/chevron.svg"); horizontal-padding: Tokens.s3; left-aligned: true; enabled: !root.modal-open; clicked => { history-actions.show(); } }
                 }
-                ListView { for row in root.printer-rows: Rectangle { height: 182px;
-                    HorizontalLayout { padding-bottom: Tokens.gap; spacing: Tokens.gap; alignment: start;
-                        for printer in row: PrinterCard { width: root.card-width; horizontal-stretch: 0; printer: printer; busy: root.busy || root.modal-open;
-                            details => { root.select-printer(printer.id); }
-                            toggle(enabled) => { root.toggle-printer(printer.id, enabled); }
-                            test => { root.test-printer(printer.id); }
+                history-actions := PopupWindow { x: parent.width - Tokens.px180; y: Tokens.px56; width: Tokens.px180; height: Tokens.px300;
+                    Rectangle { background: Tokens.surface; border-width: Tokens.hairline; border-color: Tokens.border; border-radius: Tokens.radius;
+                        VerticalLayout { padding: Tokens.s1; spacing: Tokens.s1;
+                            for date[i] in [@tr("Today"), @tr("All dates"), @tr("Last 7 days")]: StudioButton { text: date; quiet: true; left-aligned: true; clicked => { root.activity-date = i; history-actions.close(); root.refresh(); } }
+                            for status[i] in [@tr("All activity"), @tr("Saved only"), @tr("Failed only")]: StudioButton { text: status; quiet: true; left-aligned: true; clicked => { root.activity-filter = i; history-actions.close(); root.refresh(); } }
+                            StudioButton { text: @tr("Retry pending"); quiet: true; clicked => { history-actions.close(); root.retry(); } }
+                            StudioButton { text: @tr("Clear history"); quiet: true; clicked => { history-actions.close(); root.confirm-clear = true; } }
                         }
                     }
-                } }
-            }
-            if root.page == 1: VerticalLayout { spacing: Tokens.gap;
-                HorizontalLayout { spacing: 8px;
-                    LineEdit { enabled: !root.modal-open; text <=> root.activity-search; placeholder-text: @tr("Search activity"); edited => { root.refresh(); } }
-                    ComboBox { enabled: !root.modal-open; model: [@tr("All activity"), @tr("Saved"), @tr("Failed")]; current-index <=> root.activity-filter; selected => { root.refresh(); } }
-                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("Retry pending"); clicked => { root.retry(); } }
-                    Button { enabled: !root.modal-open && (!root.busy); text: @tr("Clear history"); clicked => { root.confirm-clear = true; } }
                 }
-                if root.activity.length == 0: Text { text: @tr("No matching activity. Print a document or try a test page."); color: Tokens.secondary; wrap: word-wrap; }
-                ListView { for item in root.activity: Rectangle { height: 112px; background: Tokens.surface; border-color: Tokens.border; border-width: 1px; border-radius: Tokens.radius;
-                    HorizontalLayout { padding: 16px; spacing: 16px;
-                        VerticalLayout { Text { text: item.file; color: Tokens.text; font-weight: 600; overflow: elide; } Text { text: item.printer + " · " + item.date; color: Tokens.secondary; overflow: elide; } Text { text: item.status; color: Tokens.secondary; overflow: elide; } }
-                        if !item.failed: Button { enabled: !root.modal-open; text: @tr("Open"); clicked => { root.open-path(item.path); } }
-                        if !item.failed: Button { enabled: !root.modal-open; text: @tr("Show folder"); clicked => { root.show-folder(item.path); } }
-                        if item.failed: Button { enabled: !root.modal-open && (!root.busy); text: @tr("Fix printer"); clicked => { root.select-printer(item.printer-id); } }
+                if root.page == 0: VerticalLayout { y: Tokens.px71; height: parent.height - Tokens.px71; spacing: Tokens.s4;
+                    if root.attention-id != "": Rectangle { height: Tokens.px54; background: Tokens.danger-bg; border-width: Tokens.hairline; border-color: Tokens.danger-border; border-radius: Tokens.nav-radius;
+                        HorizontalLayout { padding-left: Tokens.s4; padding-right: Tokens.s4; spacing: Tokens.s3;
+                            Text { text: @tr("{} can't save PDFs.", root.attention-name); color: Tokens.danger-fg; font-size: Tokens.body; font-weight: Tokens.font-semibold; vertical-alignment: center; }
+                            Text { text: @tr("The folder {} wasn't found.", root.attention-folder); color: Tokens.text; font-size: Tokens.body; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                            StudioButton { text: @tr("Choose a new folder"); enabled: !root.modal-open && !root.busy; clicked => { root.choose-folder(root.attention-id); } }
+                        }
                     }
-                } }
-            }
-            if root.page == 2: VerticalLayout { spacing: 16px;
-                Text { text: @tr("Start with a useful preset"); color: Tokens.text; font-size: 20px; }
-                Text { text: @tr("Choose a preset, then set the printer name and output folder."); color: Tokens.secondary; }
-                for preset in [{name: @tr("Invoices"), pattern: "Invoice_{date}_{counter}"}, {name: @tr("Receipts"), pattern: "Receipt_{date}_{counter}"}, {name: @tr("Contracts"), pattern: "{title}_{date}"}, {name: @tr("Reports"), pattern: "Report_{date}_{time}"}]: Rectangle {
-                    height: 80px; background: Tokens.surface; border-radius: Tokens.radius;
-                    HorizontalLayout { padding: 16px; spacing: 16px;
-                        Text { text: preset.name; color: Tokens.text; font-size: 17px; font-weight: 600; }
-                        Text { text: preset.pattern; color: Tokens.secondary; }
-                        Button { enabled: !root.modal-open && (!root.busy); text: @tr("Use preset"); clicked => { root.edit-id = ""; root.printer-name = preset.name; root.pattern = preset.pattern; root.folder = root.default-folder; root.monthly = false; root.open-after = false; root.confirm-delete = false; root.message = ""; root.editor = true; } }
+                    HorizontalLayout { height: Tokens.control-height; spacing: Tokens.s2; alignment: start;
+                        FilterChip { text: @tr("All {}", root.printer-count); selected: root.filter == 0; enabled: !root.modal-open; clicked => { root.filter = 0; root.refresh(); } }
+                        FilterChip { text: @tr("Active {}", root.active-count); selected: root.filter == 1; enabled: !root.modal-open; clicked => { root.filter = 1; root.refresh(); } }
+                        FilterChip { text: @tr("Needs attention {}", root.attention-count); selected: root.filter == 2; enabled: !root.modal-open; clicked => { root.filter = 2; root.refresh(); } }
                     }
+                    ListView { for row in root.printer-rows: Rectangle { height: Tokens.card-height + Tokens.s4;
+                        HorizontalLayout { spacing: Tokens.s4; padding-bottom: Tokens.s4; alignment: start;
+                            for printer in row: Rectangle { width: root.card-width; height: Tokens.card-height; horizontal-stretch: 0;
+                                if !printer.is-new: PrinterCard { printer: printer; busy: root.busy || root.modal-open;
+                                    details => { root.select-printer(printer.id); }
+                                    toggle(value) => { root.toggle-printer(printer.id, value); }
+                                    test => { root.test-printer(printer.id); }
+                                    open-folder => { root.open-path(printer.folder); }
+                                }
+                                if printer.is-new: Rectangle {
+                                    Image { width: parent.width; height: parent.height; source: @image-url("../assets/new-card.svg"); image-fit: fill; }
+                                    Image { x: (parent.width - Tokens.s6) / 2; y: Tokens.px68; width: Tokens.s6; height: Tokens.s6; source: @image-url("../assets/icons/plus.svg"); colorize: Tokens.accent-text; }
+                                    Text { x: Tokens.px0; width: parent.width; y: Tokens.px96; height: Tokens.s6; text: @tr("New printer"); color: Tokens.accent-text; font-size: Tokens.body; font-weight: Tokens.font-semibold; horizontal-alignment: center; }
+                                    accessible-role: button; accessible-label: @tr("Create another printer"); accessible-enabled: !root.modal-open && !root.busy;
+                                    accessible-action-default => { if !root.modal-open && !root.busy { root.new-printer(); } }
+                                    TouchArea { enabled: !root.modal-open && !root.busy; clicked => { root.new-printer(); } }
+                                }
+                            }
+                        }
+                    } }
                 }
-                Rectangle { vertical-stretch: 1; }
+                if root.page == 1: ActivityPage { y: root.width < Tokens.px1150 ? Tokens.px127 : Tokens.px75; height: parent.height - self.y; activity: root.activity; saved: root.saved-count; failed: root.failed-count; space: root.saved-space; disabled: root.modal-open || root.busy;
+                    open(path) => { root.open-path(path); } folder(path) => { root.show-folder(path); } fix(id) => { root.select-printer(id); }
+                }
+                if root.page == 2: VerticalLayout { y: Tokens.px80; spacing: Tokens.s4;
+                    for preset in [{name: @tr("Invoices"), pattern: "Invoice_{date}_{counter}"}, {name: @tr("Receipts"), pattern: "Receipt_{date}_{counter}"}, {name: @tr("Contracts"), pattern: "{title}_{date}"}, {name: @tr("Reports"), pattern: "Report_{date}_{time}"}]: Rectangle {
+                        height: Tokens.px80; background: Tokens.surface; border-color: Tokens.border; border-width: Tokens.hairline; border-radius: Tokens.radius;
+                        HorizontalLayout { padding: Tokens.s4; spacing: Tokens.s4;
+                            Text { text: preset.name; color: Tokens.text; font-size: Tokens.section; font-weight: Tokens.font-semibold; }
+                            Text { text: preset.pattern; color: Tokens.secondary; font-size: Tokens.body; }
+                            StudioButton { text: @tr("Use preset"); enabled: !root.modal-open && !root.busy; clicked => { root.new-printer(); root.printer-name = preset.name; root.pattern = preset.pattern; } }
+                        }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+                if root.page == 3: SettingsPage { y: Tokens.px75; height: parent.height - Tokens.px75;
+                    startup <=> root.startup; tray <=> root.keep-tray; notifications <=> root.notifications; theme <=> root.theme; history <=> root.history-index; folder <=> root.default-folder;
+                    native-available: root.native-available; disabled: root.modal-open || root.busy;
+                    save => { root.save-settings(); } browse => { root.browse(true); }
+                    export => { root.export-backup(); } import => { root.import-backup(); }
+                    diagnostics => { root.copy-diagnostics(); diagnostic-copy.select-all(); diagnostic-copy.copy(); }
+                    logs => { root.open-logs(); } open(path) => { root.open-path(path); }
+                }
             }
-            if root.page == 3: ScrollView { VerticalLayout { spacing: 20px; padding: 8px;
-                Text { text: @tr("Startup and background printing"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                Switch { enabled: !root.modal-open && (root.native-available); text: @tr("Start with Windows"); checked <=> root.startup; }
-                Switch { enabled: !root.modal-open && (root.native-available); text: @tr("Keep processing in the tray when the window closes"); checked <=> root.keep-tray; }
-                Switch { enabled: !root.modal-open && (root.native-available); text: @tr("Notify me when a PDF is saved"); checked <=> root.notifications; }
-                Text { text: @tr("Appearance"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                ComboBox { enabled: !root.modal-open; model: [@tr("Light"), @tr("Dark"), @tr("Use system setting")]; current-index <=> root.theme; }
-                Text { text: @tr("Default output folder"); color: Tokens.text; }
-                HorizontalLayout { spacing: 8px; LineEdit { enabled: !root.modal-open; text <=> root.default-folder; } Button { enabled: !root.modal-open; text: @tr("Browse"); clicked => { root.browse(true); } } }
-                Button { enabled: !root.modal-open && (!root.busy); text: @tr("Save settings"); primary: true; clicked => { root.save-settings(); } }
-                Text { text: @tr("Backup and recovery"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                HorizontalLayout { spacing: 12px; Button { enabled: !root.modal-open && (!root.busy); text: @tr("Export printers"); clicked => { root.export-backup(); } } Button { enabled: !root.modal-open && (!root.busy); text: @tr("Import printers"); clicked => { root.import-backup(); } } Button { enabled: !root.modal-open && (!root.busy); text: @tr("Retry pending PDFs"); clicked => { root.retry(); } } }
-                Text { text: @tr("Help"); color: Tokens.text; font-size: 18px; font-weight: 600; }
-                HorizontalLayout { spacing: 12px; Button { enabled: !root.modal-open; text: @tr("Copy diagnostics"); clicked => { root.copy-diagnostics(); diagnostic-copy.select-all(); diagnostic-copy.copy(); } } Button { enabled: !root.modal-open; text: @tr("Open log folder"); clicked => { root.open-logs(); } } }
-                Text { text: @tr("Virtual Printer Studio 0.2.0\nMade with Slint · https://slint.dev\n\nWindows printers use Microsoft Print to PDF and the built-in Standard TCP/IP monitor over authenticated local LPR. Captured jobs are retained until delivery is acknowledged. Keep the app running in the tray for immediate saving.\n\nReview the Slint licence before distribution."); color: Tokens.secondary; wrap: word-wrap; }
-            } }
+            if root.message != "" || root.busy: Rectangle { y: parent.height - Tokens.px56; height: Tokens.px56; background: Tokens.surface; border-width: Tokens.hairline; border-color: Tokens.border; border-radius: Tokens.radius;
+                HorizontalLayout { padding: Tokens.s3; spacing: Tokens.s3;
+                    Text { text: root.busy ? @tr("Working… check for a Windows administrator prompt.") : root.message; color: Tokens.text; font-size: Tokens.small; wrap: word-wrap; horizontal-stretch: 1; }
+                    StudioButton { text: @tr("Dismiss"); enabled: !root.busy; clicked => { root.message = ""; } }
+                }
+            }
         }
     }
-    if root.welcome || root.editor || root.confirm-clear: Rectangle { background: #00000066;
-        TouchArea { }
-        Rectangle { width: 620px; height: root.welcome || root.confirm-delete || root.confirm-clear ? 360px : 640px;
-            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; background: Tokens.surface; border-radius: 12px;
-            VerticalLayout { padding: 28px; spacing: 16px;
-                if root.welcome: VerticalLayout { spacing: 20px;
-                    Text { text: @tr("Welcome to Virtual Printer Studio"); color: Tokens.text; font-size: 26px; wrap: word-wrap; }
-                    Text { text: @tr("Create a printer and choose where its PDFs go. On Windows, approve administrator access once to install it, then choose that printer from any application's Print dialog.\n\nKeep the app in the tray to save captured documents immediately. If the app is stopped, Windows keeps queued jobs until the app starts again."); color: Tokens.secondary; wrap: word-wrap; }
-                    Button { enabled: !root.busy; text: @tr("Get started"); primary: true; clicked => { root.dismiss-welcome(); } }
+    if !root.welcome && ((root.editor && root.edit-id == "") || root.confirm-delete || root.confirm-clear): Rectangle {
+        background: Tokens.overlay; TouchArea { }
+        Image { x: dialog.x - Tokens.px60; y: dialog.y - Tokens.px40; width: dialog.width + Tokens.px120; height: dialog.height + Tokens.px120; source: @image-url("../assets/dialog-shadow.svg"); image-fit: fill; }
+        dialog := Rectangle {
+            width: Tokens.dialog-width;
+            height: root.confirm-delete || root.confirm-clear ? Tokens.px280 : root.advanced ? Tokens.px634 : Tokens.dialog-height;
+            x: (parent.width - self.width) / 2; y: min(Tokens.dialog-top, (parent.height - self.height) / 2);
+            background: Tokens.surface; border-radius: Tokens.radius;
+            if !root.confirm-delete && !root.confirm-clear: Rectangle { x: Tokens.s7; y: Tokens.s6; width: parent.width - Tokens.px56; height: parent.height - Tokens.px48;
+                Text { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: Tokens.s7; text: @tr("New printer"); color: Tokens.text; font-size: Tokens.dialog-title; font-weight: Tokens.font-semibold; }
+                Text { x: Tokens.px0; width: parent.width; y: Tokens.s8; height: Tokens.s5; text: @tr("Anything you print to it is saved as a PDF automatically."); color: Tokens.secondary; font-size: Tokens.body; }
+                Text { x: Tokens.px0; width: parent.width; y: Tokens.px68; height: Tokens.s5; text: @tr("Printer name"); color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; }
+                StudioField { x: Tokens.px0; y: Tokens.px91; height: Tokens.control-height; width: parent.width; text <=> root.printer-name; placeholder-text: @tr("e.g. Invoices"); accessible-label: @tr("Printer name"); enabled: !root.busy; auto-focus: root.focus-name; }
+                Text { x: Tokens.px0; width: parent.width; y: Tokens.px143; height: Tokens.s5; text: @tr("Save PDFs to"); color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; }
+                StudioField { x: Tokens.px0; y: Tokens.px165; height: Tokens.control-height; width: parent.width - Tokens.px116; text <=> root.folder; accessible-label: @tr("Output folder"); enabled: !root.busy; }
+                StudioButton { x: parent.width - Tokens.px108; y: Tokens.px165; width: Tokens.px108; text: @tr("Browse"); icon: @image-url("../assets/icons/folder.svg"); enabled: !root.busy; clicked => { root.browse(false); } }
+                Text { x: Tokens.px0; width: parent.width; y: Tokens.px217; height: Tokens.s5; text: @tr("File name"); color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; }
+                StudioField { x: Tokens.px0; y: Tokens.px239; height: Tokens.control-height; width: parent.width; text <=> root.pattern; accessible-label: @tr("File name pattern"); enabled: !root.busy; }
+                HorizontalLayout { y: Tokens.px279; height: Tokens.px30; spacing: Tokens.px6; alignment: start;
+                    FilterChip { font-size: Tokens.caption; text: @tr("+ Date"); enabled: !root.busy; clicked => { root.pattern += "{date}"; } }
+                    FilterChip { font-size: Tokens.caption; text: @tr("+ Time"); enabled: !root.busy; clicked => { root.pattern += "{time}"; } }
+                    FilterChip { font-size: Tokens.caption; text: @tr("+ Document title"); enabled: !root.busy; clicked => { root.pattern += "{title}"; } }
+                    FilterChip { font-size: Tokens.caption; text: @tr("+ App name"); enabled: false; Tooltip { StudioHint { message: @tr("The source application name is not available for this print job."); } } }
+                    FilterChip { font-size: Tokens.caption; text: @tr("+ Counter"); enabled: !root.busy; clicked => { root.pattern += "{counter}"; } }
                 }
-                if root.confirm-clear && !root.welcome: VerticalLayout { spacing: 20px;
-                    Text { text: @tr("Clear activity history?"); color: Tokens.text; font-size: 24px; }
-                    Text { text: @tr("Saved PDFs and pending captured documents will be kept."); color: Tokens.secondary; wrap: word-wrap; }
-                    HorizontalLayout { spacing: 12px; Button { text: @tr("Cancel"); clicked => { root.confirm-clear = false; } } Button { enabled: !root.busy; text: @tr("Clear history"); clicked => { root.clear-history(); root.confirm-clear = false; } } }
+                Rectangle { y: Tokens.px329; height: Tokens.px36; border-radius: Tokens.nav-radius; background: Tokens.bg;
+                    Text { x: Tokens.s3; width: Tokens.px60; text: @tr("Preview"); color: Tokens.secondary; font-size: Tokens.small; vertical-alignment: center; }
+                    Text { x: Tokens.px72; width: parent.width - Tokens.px84; text: root.pattern-preview; color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; vertical-alignment: center; overflow: elide; }
                 }
-                if root.confirm-delete && !root.welcome: VerticalLayout { spacing: 20px;
-                    Text { text: @tr("Delete this printer?"); color: Tokens.text; font-size: 24px; }
-                    Text { text: @tr("The Windows printer and its profile will be removed. Saved PDFs and activity will be kept. Pending print jobs must be delivered or cancelled first."); color: Tokens.secondary; wrap: word-wrap; }
-                    Text { text: root.message; color: Tokens.secondary; wrap: word-wrap; }
-                    HorizontalLayout { spacing: 12px; Button { enabled: !root.busy; text: @tr("Cancel"); clicked => { root.confirm-delete = false; } } Button { enabled: !root.busy; text: @tr("Delete printer"); clicked => { root.delete-printer(root.edit-id); } } }
+                Text { x: Tokens.px0; width: parent.width; y: Tokens.px381; height: Tokens.s8; text: @tr("Start saving right away"); color: Tokens.text; font-size: Tokens.body; vertical-alignment: center; }
+                StudioToggle { x: parent.width - Tokens.toggle-width; y: Tokens.px379; checked <=> root.start-saving; label: @tr("Start saving right away"); enabled: !root.busy; }
+                StudioButton { x: Tokens.px0; y: Tokens.px419; text: @tr("Advanced options"); icon: @image-url("../assets/icons/chevron.svg"); quiet: true; enabled: !root.busy; clicked => { root.advanced = !root.advanced; } }
+                if root.advanced: HorizontalLayout { y: Tokens.px459; height: Tokens.px70; spacing: Tokens.s4;
+                    Text { text: @tr("Organise in monthly subfolders"); color: Tokens.text; font-size: Tokens.small; }
+                    StudioToggle { checked <=> root.monthly; label: @tr("Organise in monthly subfolders"); }
+                    Text { text: @tr("Open after saving"); color: Tokens.text; font-size: Tokens.small; }
+                    StudioToggle { checked <=> root.open-after; label: @tr("Open each PDF after saving"); }
                 }
-                if root.editor && !root.welcome && !root.confirm-delete: VerticalLayout { spacing: 12px;
-                    Text { text: root.edit-id == "" ? @tr("New printer") : @tr("Printer details"); color: Tokens.text; font-size: 24px; font-weight: 600; }
-                    Text { text: @tr("Printer name"); color: Tokens.text; }
-                    LineEdit { accessible-label: @tr("Printer name"); text <=> root.printer-name; placeholder-text: @tr("e.g. Invoices"); }
-                    Text { text: @tr("Save PDFs to"); color: Tokens.text; }
-                    HorizontalLayout { spacing: 8px; LineEdit { accessible-label: @tr("Output folder"); text <=> root.folder; } Button { text: @tr("Browse"); clicked => { root.browse(false); } } }
-                    Text { text: @tr("File name pattern"); color: Tokens.text; }
-                    LineEdit { accessible-label: @tr("File name pattern"); text <=> root.pattern; }
-                    Text { text: @tr("Available: {{title}}, {{date}}, {{time}}, {{counter}}\nExisting files are never overwritten."); color: Tokens.secondary; wrap: word-wrap; }
-                    Switch { text: @tr("Organise in monthly subfolders"); checked <=> root.monthly; }
-                    Switch { text: @tr("Open each PDF after saving"); checked <=> root.open-after; }
-                    if root.edit-id != "": HorizontalLayout { spacing: 8px;
-                        if root.native-available: Button { enabled: !root.busy; text: @tr("Install or repair"); clicked => { root.repair-printer(root.edit-id); } }
-                        Button { text: @tr("Open folder"); clicked => { root.open-path(root.folder); } }
-                        Button { enabled: !root.busy; text: @tr("Print test page"); clicked => { root.test-printer(root.edit-id); } }
-                    }
-                    Text { text: root.busy ? @tr("Working… check for a Windows administrator prompt.") : root.message; color: Tokens.secondary; wrap: word-wrap; }
-                    HorizontalLayout { spacing: 8px;
-                        if root.edit-id != "": Button { enabled: !root.busy; text: @tr("Delete printer"); clicked => { root.confirm-delete = true; root.message = ""; } }
-                        Button { enabled: !root.busy; text: @tr("Cancel"); clicked => { root.editor = false; } }
-                        Button { enabled: !root.busy; text: @tr("Save printer"); primary: true; clicked => { root.save-printer(root.edit-id, root.printer-name, root.folder, root.pattern, root.monthly, root.open-after); } }
-                    }
+                Text { x: Tokens.px0; y: parent.height - Tokens.px36; width: parent.width - Tokens.px220; height: Tokens.px40; text: root.busy ? @tr("Working… check for an administrator prompt.") : root.message != "" ? root.message : @tr("Windows may ask for administrator permission\nonce."); color: root.message == "" ? Tokens.secondary : Tokens.danger-fg; font-size: Tokens.caption; wrap: word-wrap; }
+                StudioButton { x: parent.width - Tokens.px210; y: parent.height - Tokens.control-height; width: Tokens.px78; text: @tr("Cancel"); enabled: !root.busy; clicked => { root.editor = false; } }
+                StudioButton { x: parent.width - Tokens.px124; y: parent.height - Tokens.control-height; width: Tokens.px124; text: @tr("Create printer"); label: @tr("Save printer"); primary: true; enabled: !root.busy; clicked => { root.save-profile(); } }
+            }
+            if root.confirm-delete || root.confirm-clear: VerticalLayout { padding: Tokens.s7; spacing: Tokens.s4;
+                Text { text: root.confirm-delete ? @tr("Delete this printer?") : @tr("Clear activity history?"); color: Tokens.text; font-size: Tokens.dialog-title; font-weight: Tokens.font-semibold; }
+                Text { text: root.confirm-delete ? @tr("The Windows printer and its profile will be removed. Saved PDFs and activity will be kept. Deliver or cancel pending print jobs first.") : @tr("Saved PDFs and pending captured documents will be kept."); color: Tokens.secondary; font-size: Tokens.body; wrap: word-wrap; }
+                Text { text: root.message; color: Tokens.danger-fg; font-size: Tokens.small; wrap: word-wrap; }
+                HorizontalLayout { alignment: end; spacing: Tokens.s2;
+                    StudioButton { text: @tr("Cancel"); enabled: !root.busy; clicked => { root.confirm-delete = false; root.confirm-clear = false; } }
+                    StudioButton { text: root.confirm-delete ? @tr("Delete printer") : @tr("Clear history"); primary: true; enabled: !root.busy; clicked => { if root.confirm-delete { root.delete-printer(root.edit-id); } else { root.clear-history(); root.confirm-clear = false; } } }
                 }
             }
         }
+    }
     }
 }

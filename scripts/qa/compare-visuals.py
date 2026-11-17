@@ -18,9 +18,10 @@ for path in sorted(reference.glob('*.png')):
         results.append(dict(scene=path.stem, status='not captured'))
         continue
     expected = Image.open(path).convert('RGB')
-    expected = expected.crop((0, 40, expected.width, expected.height))
+    framed = int(path.stem[:2]) <= 7
+    if framed: expected = expected.crop((0, 40, expected.width, expected.height))
     observed = Image.open(actual).convert('RGB')
-    row = dict(scene=path.stem, expected_size=expected.size, actual_size=observed.size)
+    row = dict(scene=path.stem, expected_size=expected.size, actual_size=observed.size, capture_kind='application client' if framed else 'component preview; not native OS evidence')
     if expected.size != observed.size:
         row['status'] = 'size mismatch'
     else:
@@ -36,13 +37,13 @@ for path in sorted(reference.glob('*.png')):
         diff.save(args.output / f'{path.stem}-difference.png')
     results.append(row)
 (args.output/'results.json').write_text(json.dumps(results, indent=2))
-lines = ['Visual comparison: reference title bar cropped by 40 pixels; no resizing or alignment.', '', '| Scene | Result | Changed pixels |', '|---|---|---|']
+lines = ['Visual comparison: reference title bar cropped by 40 pixels for scenes 01–07; scenes 08/09 are component previews; no resizing or alignment.', '', '| Scene | Result | Changed pixels |', '|---|---|---|']
 for row in results:
     lines.append(f"| {row['scene']} | {row['status']} | {row.get('changed_percent', 'N/A')} |")
 (args.output/'report.md').write_text('\n'.join(lines)+'\n')
 print('\n'.join(lines))
 print('PIXEL-PERFECT: ' + ('YES' if all(r['status'] == 'pixel perfect' for r in results) else 'NO'))
-if any(r['status'] in ('not captured', 'size mismatch') for r in results[:7]):
+if any(r['status'] in ('not captured', 'size mismatch') for r in results):
     raise SystemExit('Required application screenshot missing or incorrectly sized')
 if args.require_pixel_perfect and any(row['status'] != 'pixel perfect' for row in results):
     raise SystemExit(1)

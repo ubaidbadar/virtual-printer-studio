@@ -26,9 +26,15 @@ pub enum Command {
         pattern: String,
         monthly: bool,
         open_after: bool,
+        start_enabled: bool,
+    },
+    Relocate {
+        id: String,
+        folder: PathBuf,
     },
     Select(String),
     Toggle(String, bool),
+    SetAll(bool),
     Delete(String),
     Repair(String),
     Test(String),
@@ -39,6 +45,7 @@ pub enum Command {
         tray: bool,
         notifications: bool,
         startup: bool,
+        history_days: u32,
     },
     Import(PathBuf),
     Export(PathBuf),
@@ -55,6 +62,7 @@ pub struct Update {
     pub queued: usize,
     pub capture_running: bool,
     pub capture_port: u16,
+    pub editor_health: Option<platform::PrinterHealth>,
 }
 pub struct Service {
     pub sender: Sender<Command>,
@@ -93,8 +101,8 @@ impl Service {
             while let Ok(command)=rx.recv(){
                 if matches!(command,Command::Shutdown){break;}
                 let sync_settings=matches!(&command,Command::Settings{..});
-                let scan_after=matches!(&command,Command::SaveProfile{..}|Command::Repair(_)|Command::Toggle(_,true));
-                let mut edit=None;let mut close=false;
+                let scan_after=matches!(&command,Command::SaveProfile{..}|Command::Relocate{..}|Command::Repair(_)|Command::Toggle(_,true)|Command::SetAll(true));
+                let mut edit=None;let mut close=false;let mut editor_health=None;
                 let result=(||->Result<String>{
                     match command {
                         Command::Refresh=>Ok(String::new()),
@@ -110,17 +118,20 @@ impl Service {
                         }
                         Command::Select(id)=>{
                             let printer=find(&state,&id)?.clone();edit=Some(printer.clone());
+                            editor_health=Some(platform::PrinterHealth::default());
                             validate(&state,&id,&printer.name,&printer.folder,&printer.pattern)?;
-                            #[cfg(windows)] if printer.installed { return platform::health(&printer); }
+                            if let Some(health)=editor_health.as_mut(){health.write=true;}
+                            #[cfg(windows)] if printer.installed { editor_health=Some(platform::health(&printer)?);return Ok("Printer health checked.".into()); }
                             Ok(if cfg!(windows){"Output folder is writable. Select Install or repair to connect this printer."}else{"Output folder is writable. System printing is available on Windows."}.into())
                         },
                         Command::Welcome=>{let mut next=state.clone();next.welcomed=true;commit(&mut state,&path,next)?;Ok(String::new())},
-                        Command::SaveProfile{id,name,folder,pattern,monthly,open_after}=>{
+                        Command::SaveProfile{id,name,folder,pattern,monthly,open_after,start_enabled}=>{
                             let folder=PathBuf::from(folder);validate(&state,&id,&name,&folder,&pattern)?;
                             ensure!(name.trim().len()<=180 && !name.chars().any(|c|c.is_control()||"\\,/".contains(c)),"Use a printer name without slashes, commas or control characters (180 characters maximum).");
                             let mut next=state.clone();
                             let existing=next.printers.iter().position(|p|p.id==id);
-                            let mut printer=existing.map(|i|next.printers[i].clone()).unwrap_or_else(||Printer{id:uuid::Uuid::new_v4().to_string(),enabled:true,..Printer::default()});
+                            let mut printer=existing.map(|i|next.printers[i].clone()).unwrap_or_else(||Printer{id:uuid::Uuid::new_v4().to_string(),enabled:start_enabled,..Printer::default()});
+                            next.welcomed=true;
                             let native_change=!printer.installed || printer.name!=name.trim();
                             printer.name=name.trim().into();printer.folder=folder;printer.pattern=pattern;printer.monthly_folders=monthly;printer.open_after=open_after;
                             if let Some(i)=existing{next.printers[i]=printer.clone();}else{next.printers.push(printer.clone());}
@@ -137,6 +148,14 @@ impl Service {
                             failures.clear();close=true;
                             Ok(if cfg!(windows){"Printer saved and ready in Windows Print dialogs.".into()}else{"Profile saved. Windows printer installation is available on Windows.".into()})
                         }
+                        Command::Relocate{id,folder}=>{
+                            let p=find(&state,&id)?;
+                            validate(&state,&id,&p.name,&folder,&p.pattern)?;
+                            let mut next=state.clone();let p=find_mut(&mut next,&id)?;p.folder=folder;
+                            if p.installed{p.last_error.clear();}
+                            commit(&mut state,&path,next)?;failures.clear();
+                            Ok("Output folder updated. Pending PDFs will be retried.".into())
+                        }
                         Command::Repair(id)=>{
                             let p=find(&state,&id)?.clone();
                             match platform::native_action("ensure",&p,state.capture_port){Ok(())=>{let p=find_mut(&mut state,&id)?;p.installed=true;p.last_error.clear();save(&path,&state)?;failures.clear();Ok("Windows printer repaired. Pending PDFs will be retried.".into())},Err(e)=>{find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;Err(e)}}
@@ -147,6 +166,16 @@ impl Service {
                             if cfg!(windows) && p.installed&& let Err(e)=platform::native_action("pause",&p,state.capture_port){find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;return Err(e);}
                             failures.clear();Ok(if enabled{"Printer resumed."}else{"Printer paused. Queued documents are retained."}.into())
                         }
+                        Command::SetAll(enabled)=>{
+                            let mut next=state.clone();for p in &mut next.printers{p.enabled=enabled;}commit(&mut state,&path,next)?;
+                            let mut failed=false;
+                            for p in state.printers.clone(){
+                                if cfg!(windows) && p.installed && let Err(error)=platform::native_action("pause",&p,state.capture_port){find_mut(&mut state,&p.id)?.last_error=error.to_string();failed=true;}
+                            }
+                            save(&path,&state)?;failures.clear();
+                            ensure!(!failed,"Some Windows queues need attention. Open Printers to repair them.");
+                            Ok(if enabled{"All printers resumed."}else{"All printers paused. Queued documents are retained."}.into())
+                        }
                         Command::Delete(id)=>{
                             let printer=find(&state,&id)?.clone();ensure!(pending_for(&root,&id)==0,"This printer has captured jobs awaiting delivery. Resume or retry them before deleting it.");
                             if cfg!(windows) {platform::native_action("remove",&printer,state.capture_port)?;}
@@ -155,12 +184,13 @@ impl Service {
                         Command::Test(id)=>{
                             let p=find(&state,&id)?.clone();ensure!(p.enabled,"Resume this printer before printing a test page.");
                             if cfg!(windows){ensure!(p.installed,"Install or repair this printer first.");platform::print_test(&p)?;Ok("Test page sent through the Windows print queue. It will appear in Activity when captured.".into())}
-                            else{let mut next=state.clone();let p=find_mut(&mut next,&id)?;let output=test_pdf(p)?;let name=p.name.clone();next.activity.push(Activity{printer:name,file:output.file_name().unwrap_or_default().to_string_lossy().into(),status:"Saved".into(),path:output.to_string_lossy().into(),printer_id:id,job_id:uuid::Uuid::new_v4().to_string(),created_unix:time::OffsetDateTime::now_utc().unix_timestamp()});commit(&mut state,&path,next)?;Ok(format!("Local test PDF saved to {}. System printing requires Windows.",output.display()))}
+                            else{let mut next=state.clone();let p=find_mut(&mut next,&id)?;let output=test_pdf(p)?;let name=p.name.clone();next.activity.push(Activity{printer:name,file:output.file_name().unwrap_or_default().to_string_lossy().into(),status:"Saved".into(),path:output.to_string_lossy().into(),printer_id:id,job_id:uuid::Uuid::new_v4().to_string(),created_unix:time::OffsetDateTime::now_utc().unix_timestamp(),size_bytes:fs::metadata(&output).map(|m|m.len()).unwrap_or(0)});commit(&mut state,&path,next)?;Ok(format!("Local test PDF saved to {}. System printing requires Windows.",output.display()))}
                         }
-                        Command::Settings{dark,theme,folder,tray,notifications,startup}=>{
+                        Command::Settings{dark,theme,folder,tray,notifications,startup,history_days}=>{
                             ensure!(Path::new(&folder).is_dir(),"Choose an existing default output folder.");
+                            ensure!([0,30,90,365].contains(&history_days),"Choose a supported history duration.");
                             if startup!=state.startup {platform::startup(startup)?;}
-                            let mut next=state.clone();next.dark=dark;next.theme=theme.clamp(0,2);next.default_folder=folder;next.keep_tray=tray;next.notifications=notifications;next.startup=startup;
+                            let mut next=state.clone();next.dark=dark;next.theme=theme.clamp(0,2);next.default_folder=folder;next.keep_tray=tray;next.notifications=notifications;next.startup=startup;next.history_days=history_days;
                             if let Err(e)=commit(&mut state,&path,next){let _=platform::startup(state.startup);return Err(e);}
                             Ok("Settings saved.".into())
                         }
@@ -181,7 +211,7 @@ impl Service {
                 let mut new_watch=false;
                 if let Some(watcher)=watcher.as_mut(){for p in &state.printers{let dir=root.join("jobs").join(&p.id);let _=fs::create_dir_all(&dir);let _=fs::create_dir_all(root.join("acks").join(&p.id));if dir.is_dir() && !watched.contains(&p.id){match watcher.watch(&dir,RecursiveMode::Recursive){Ok(())=>{watched.insert(p.id.clone());new_watch=true;},Err(e)=>platform::log(&log,&format!("Cannot watch capture folder: {e}"))}}}}
                 let queued=state.printers.iter().map(|p|pending_for(&root,&p.id)).sum();
-                sink(Update{state:state.clone(),message,editor:edit,close_editor:close,sync_settings,queued,capture_running:capture.is_some(),capture_port:state.capture_port});
+                sink(Update{state:state.clone(),message,editor:edit,close_editor:close,sync_settings,queued,capture_running:capture.is_some(),capture_port:state.capture_port,editor_health});
                 if new_watch || scan_after {let _=tx_actions.send(Command::Scan);}
             }
         })?;
@@ -208,6 +238,7 @@ fn find_mut<'a>(state: &'a mut State, id: &str) -> Result<&'a mut Printer> {
         .context("Printer no longer exists")
 }
 fn commit(current: &mut State, path: &Path, mut next: State) -> Result<()> {
+    prune_activity(&mut next, time::OffsetDateTime::now_utc().unix_timestamp());
     if next.activity.len() > 1000 {
         next.activity.drain(..next.activity.len() - 1000);
     }
@@ -344,6 +375,7 @@ fn scan(
                         printer_id: printer.id.clone(),
                         job_id: job.id.clone(),
                         created_unix: job.created_unix,
+                        size_bytes: fs::metadata(&destination).map(|m| m.len()).unwrap_or(0),
                     };
                     if let Some(row) = next.activity.iter_mut().find(|a| a.job_id == job.id) {
                         *row = record;
@@ -368,7 +400,7 @@ fn scan(
                         platform::log(log, &e.to_string());
                     }
                     if state.notifications
-                        && let Err(e) = platform::notify_saved(&destination)
+                        && let Err(e) = platform::notify_saved(&destination, &printer.name)
                     {
                         platform::log(log, &format!("Notification unavailable: {e}"));
                     }
@@ -388,6 +420,7 @@ fn scan(
                         printer_id: printer.id.clone(),
                         job_id: id.into(),
                         created_unix: time::OffsetDateTime::now_utc().unix_timestamp(),
+                        size_bytes: 0,
                     };
                     if let Some(row) = next.activity.iter_mut().find(|a| a.job_id == id) {
                         *row = record;
@@ -440,6 +473,80 @@ pub fn process_once(state_path: &Path, root: &Path) -> Result<usize> {
 mod tests {
     use super::*;
     #[test]
+    fn folder_recovery_and_pause_all_preserve_profiles() {
+        let dir = tempfile::tempdir().expect("temp");
+        let old = dir.path().join("old");
+        let new = dir.path().join("new");
+        fs::create_dir(&old).expect("old folder");
+        fs::create_dir(&new).expect("new folder");
+        let state = State {
+            notifications: false,
+            printers: ["one", "two"]
+                .into_iter()
+                .map(|id| Printer {
+                    id: id.into(),
+                    name: id.into(),
+                    folder: old.clone(),
+                    pattern: "{title}".into(),
+                    enabled: true,
+                    ..Printer::default()
+                })
+                .collect(),
+            ..State::default()
+        };
+        let path = dir.path().join("state.json");
+        let (tx, rx) = mpsc::channel();
+        let worker = Service::start(
+            path.clone(),
+            state,
+            dir.path().join("capture"),
+            move |update| {
+                let _ = tx.send(update);
+            },
+        )
+        .expect("worker");
+        let receive = |predicate: &dyn Fn(&Update) -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                let update = rx
+                    .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .expect("worker response");
+                if predicate(&update) {
+                    break update;
+                }
+            }
+        };
+        worker
+            .sender
+            .send(Command::Relocate {
+                id: "one".into(),
+                folder: new.clone(),
+            })
+            .expect("relocate");
+        let update = receive(&|u| u.message.starts_with("Output folder updated"));
+        assert_eq!(update.state.printers[0].folder, new);
+        assert_eq!(update.state.printers[1].folder, old);
+        worker.sender.send(Command::SetAll(false)).expect("pause");
+        let update = receive(&|u| u.message.starts_with("All printers paused"));
+        assert!(update.state.printers.iter().all(|p| !p.enabled));
+        worker.sender.send(Command::SetAll(true)).expect("resume");
+        let update = receive(&|u| u.message.starts_with("All printers resumed"));
+        assert!(update.state.printers.iter().all(|p| p.enabled));
+        worker
+            .sender
+            .send(Command::Relocate {
+                id: "one".into(),
+                folder: dir.path().join("missing"),
+            })
+            .expect("bad folder");
+        receive(&|u| u.message.contains("existing output folder"));
+        assert_eq!(
+            load_state(&path).expect("persisted").0.printers[0].folder,
+            new
+        );
+        drop(worker);
+    }
+    #[test]
     fn captured_jobs_recover_after_failure_and_do_not_deliver_twice() {
         let dir = tempfile::tempdir().expect("temp");
         let root = dir.path().join("spool");
@@ -452,6 +559,7 @@ mod tests {
         fs::create_dir(&output).expect("output");
         let mut state = State {
             notifications: false,
+            history_days: 0,
             printers: vec![Printer {
                 id: id.into(),
                 name: "Invoices".into(),
@@ -538,6 +646,7 @@ mod recovery_and_watcher_tests {
         let state = State {
             welcomed: true,
             notifications: false,
+            history_days: 0,
             printers: vec![Printer {
                 id: "profile1".into(),
                 name: "Invoices".into(),

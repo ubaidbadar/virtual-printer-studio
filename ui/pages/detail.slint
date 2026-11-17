@@ -1,0 +1,123 @@
+import { ScrollView, ListView } from "std-widgets.slint";
+import { Tokens } from "../theme/tokens.slint";
+import { ActivityView } from "../state.slint";
+import { StudioHint, StudioSelect, StudioField, StudioButton, StudioToggle, StatusBadge, SectionTitle, SettingsCard, SettingRow } from "../components/controls.slint";
+export component DetailPage inherits Rectangle {
+    in-out property <string> name;
+    in-out property <string> folder;
+    in-out property <string> pattern;
+    in-out property <bool> monthly;
+    in-out property <bool> open-after;
+    in-out property <bool> notifications;
+    in property <string> preview;
+    in property <string> status: "Ready";
+    in property <string> free-space;
+    in property <bool> enabled: true;
+    in property <bool> folder-ok;
+    in property <bool> write-ok;
+    in property <bool> capture-ok;
+    in property <bool> space-ok;
+    in property <bool> busy;
+    in property <bool> native-available;
+    in property <[ActivityView]> recent;
+    property <bool> renaming;
+    property <bool> wide: root.width >= Tokens.px900;
+    callback back(); callback browse(); callback save(); callback test(); callback open(); callback file(string); callback toggle(bool); callback repair(); callback delete(); callback notify();
+    StudioButton { x: Tokens.px0; y: -Tokens.px8; height: Tokens.s8; text: @tr("Printers"); quiet: true; horizontal-padding: Tokens.px0; text-color: Tokens.secondary; label: @tr("Back to printers"); clicked => { root.back(); } }
+    Text { x: Tokens.px55; y: Tokens.px0; height: Tokens.s5; text: "›"; color: Tokens.secondary; font-size: Tokens.body; }
+    Text { x: Tokens.px67; y: Tokens.px0; height: Tokens.s5; text: root.name; color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; }
+    Rectangle { x: Tokens.px0; y: Tokens.s7; width: Tokens.px48; height: Tokens.px48; border-radius: Tokens.panel-radius; background: Tokens.tile-blue;
+        Image { x: Tokens.s3; y: Tokens.s3; width: Tokens.s6; height: Tokens.s6; source: @image-url("../../assets/icons/printer.svg"); colorize: Tokens.accent-text; }
+    }
+    if !root.renaming: Text { x: Tokens.px64; y: Tokens.s7; width: parent.width - Tokens.px490; height: Tokens.px48; overflow: elide; text: root.name; color: Tokens.text; font-size: Tokens.title; font-weight: Tokens.font-semibold; vertical-alignment: center;
+        TouchArea { enabled: !root.busy; clicked => { root.renaming = true; } }
+    }
+    if root.renaming: StudioField { x: Tokens.px64; y: Tokens.px36; width: parent.width - Tokens.px490; height: Tokens.control-height; text <=> root.name; accessible-label: @tr("Printer name"); accepted => { root.renaming = false; root.save(); } }
+    HorizontalLayout { width: Tokens.px405; x: parent.width - Tokens.px405; y: Tokens.px36; height: Tokens.control-height; spacing: Tokens.s4; alignment: end;
+        StatusBadge { text: root.status; tone: root.status == "Ready" ? 1 : root.status == "Paused" ? 0 : 2; }
+        StudioToggle { checked: root.enabled; label: @tr("Enable printer"); enabled: !root.busy; toggled(value) => { root.toggle(value); } }
+        StudioButton { text: @tr("Print test page"); enabled: !root.busy; clicked => { root.test(); } }
+        StudioButton { text: @tr("Open folder"); icon: @image-url("../../assets/icons/folder.svg"); primary: true; clicked => { root.open(); } }
+    }
+    ScrollView { y: Tokens.px96; height: parent.height - Tokens.px96; content-width: self.width; content-height: root.wide ? Tokens.px972 : Tokens.px1320;
+        property <length> left-width: root.wide ? root.width - Tokens.px324 : root.width;
+        VerticalLayout { x: Tokens.px0; y: Tokens.px0; width: parent.left-width; spacing: Tokens.s5;
+            VerticalLayout { spacing: Tokens.s2;
+                SectionTitle { text: @tr("Output"); }
+                SettingsCard { height: Tokens.px172; VerticalLayout { spacing: Tokens.px0;
+                    SettingRow { title: @tr("Save folder"); description: @tr("Where finished PDFs go");
+                        StudioField { x: parent.width - Tokens.px376; y: Tokens.s3; width: Tokens.px260; height: Tokens.control-height; text <=> root.folder; accessible-label: @tr("Output folder"); enabled: !root.busy; accepted => { root.save(); } }
+                        StudioButton { x: parent.width - Tokens.px100; y: Tokens.s3; width: Tokens.px84; text: @tr("Browse"); enabled: !root.busy; clicked => { root.browse(); } }
+                    }
+                    SettingRow { title: @tr("Subfolders"); description: @tr("Keep big folders tidy");
+                        StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("None"), @tr("By month")]; current-index: root.monthly ? 1 : 0; enabled: !root.busy; selected(index) => { root.monthly = index == 1; root.save(); } }
+                    }
+                    SettingRow { title: @tr("If a file already exists"); description: @tr("Never lose a document"); last: true;
+                        StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("Add a number")]; current-index: 0; }
+                    }
+                } }
+            }
+            VerticalLayout { spacing: Tokens.s2;
+                SectionTitle { text: @tr("File name"); }
+                SettingsCard { height: Tokens.px100; VerticalLayout { spacing: Tokens.px0;
+                    SettingRow { title: @tr("Pattern"); description: @tr("Build it from parts");
+                        StudioField { x: parent.width - Tokens.px276; y: Tokens.s3; width: Tokens.px260; height: Tokens.control-height; text <=> root.pattern; accessible-label: @tr("File name pattern"); enabled: !root.busy; accepted => { root.save(); } }
+                    }
+                    SettingRow { height: Tokens.px43; title: @tr("Preview"); last: true;
+                        Text { x: Tokens.px120; width: parent.width - Tokens.px136; text: root.preview; color: Tokens.text; font-size: Tokens.body; font-weight: Tokens.font-semibold; horizontal-alignment: right; vertical-alignment: center; overflow: elide; }
+                    }
+                } }
+            }
+            VerticalLayout { spacing: Tokens.s2;
+                SectionTitle { text: @tr("PDF options"); }
+                SettingsCard { height: Tokens.px229; VerticalLayout { spacing: Tokens.px0;
+                    SettingRow { title: @tr("Page size"); StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("From print dialog")]; current-index: 0; } }
+                    SettingRow { title: @tr("Quality"); description: @tr("Smaller files or sharper pages"); StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("Standard")]; current-index: 0; } }
+                    SettingRow { title: @tr("PDF/A archive format"); Tooltip { StudioHint { message: @tr("PDF/A export is not supported by this printer."); } } description: @tr("For long-term storage"); StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("PDF/A archive format unavailable"); enabled: false; } }
+                    SettingRow { title: @tr("Password protect"); Tooltip { StudioHint { message: @tr("PDF encryption is not supported by this printer."); } } description: @tr("Ask for a password to open"); last: true; StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Password protection unavailable"); enabled: false; } }
+                } }
+            }
+            VerticalLayout { spacing: Tokens.s2;
+                SectionTitle { text: @tr("After saving"); }
+                SettingsCard { height: Tokens.px172; VerticalLayout { spacing: Tokens.px0;
+                    SettingRow { title: @tr("Show a notification"); description: @tr("With Open and Show folder buttons"); StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Show saved PDF notifications"); checked <=> root.notifications; enabled: !root.busy && root.native-available; toggled => { root.notify(); } } }
+                    SettingRow { title: @tr("Open the PDF"); description: @tr("In your default viewer"); StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Open each PDF after saving"); checked <=> root.open-after; enabled: !root.busy; toggled => { root.save(); } } }
+                    SettingRow { title: @tr("Copy to a second folder"); Tooltip { StudioHint { message: @tr("Secondary delivery is not supported by this printer."); } } description: @tr("Backup or sync folder"); last: true; StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Secondary delivery unavailable"); enabled: false; } }
+                } }
+            }
+            HorizontalLayout { spacing: Tokens.s2;
+                StudioButton { text: @tr("Save printer"); primary: true; enabled: !root.busy; clicked => { root.save(); } }
+                StudioButton { text: @tr("Install or repair"); enabled: !root.busy && root.native-available; clicked => { root.repair(); } }
+                StudioButton { text: @tr("Delete printer"); enabled: !root.busy; clicked => { root.delete(); } }
+            }
+        }
+        VerticalLayout { x: root.wide ? parent.left-width + Tokens.s6 : Tokens.px0; y: root.wide ? Tokens.px0 : Tokens.px1000; width: root.wide ? Tokens.px300 : parent.width; spacing: Tokens.s5;
+            VerticalLayout { spacing: Tokens.s2;
+                SectionTitle { text: @tr("Health"); }
+                SettingsCard { height: Tokens.px134;
+                    for check[i] in [{ok: root.folder-ok, text: root.folder-ok ? @tr("Folder found") : @tr("Folder not found")}, {ok: root.write-ok, text: root.write-ok ? @tr("Write access") : @tr("Check write access")}, {ok: root.capture-ok, text: root.capture-ok ? @tr("Print service running") : @tr("Print service unavailable")}, {ok: root.space-ok, text: root.free-space}]: Rectangle {
+                        x: Tokens.s4; y: Tokens.s3 + i * Tokens.px29; height: Tokens.px29; width: parent.width - Tokens.s8;
+                        Image { x: Tokens.px0; y: Tokens.px6; width: Tokens.icon; height: Tokens.icon; source: check.ok ? @image-url("../../assets/icons/check.svg") : @image-url("../../assets/icons/close.svg"); colorize: check.ok ? Tokens.success-fg : Tokens.danger-fg; }
+                        Text { x: Tokens.px26; y: Tokens.px0; width: parent.width - Tokens.px26; height: parent.height; text: check.text; color: Tokens.text; font-size: Tokens.body; vertical-alignment: center; }
+                    }
+                }
+            }
+            VerticalLayout { spacing: Tokens.s2;
+                SectionTitle { text: @tr("Recent files"); }
+                SettingsCard { height: Tokens.px162;
+                    ListView { x: Tokens.s4; y: Tokens.s2; width: parent.width - Tokens.s8; height: parent.height - Tokens.s4;
+                        for file in root.recent: Rectangle { height: Tokens.px49;
+                            accessible-role: button; accessible-label: @tr("Open {}", file.file); accessible-enabled: file.path != "";
+                            accessible-action-default => { if file.path != "" { root.file(file.path); } }
+                            Rectangle { height: Tokens.hairline; background: Tokens.divider; }
+                            Text { x: Tokens.px0; width: parent.width; y: Tokens.s2; height: Tokens.s5; text: file.file; color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; overflow: elide; }
+                            Text { x: Tokens.px0; width: parent.width; y: Tokens.px26; height: Tokens.s4; text: @tr("{} · {}", file.date, file.size); color: Tokens.secondary; font-size: Tokens.caption; }
+                            TouchArea { enabled: file.path != ""; clicked => { root.file(file.path); } }
+                        }
+                    }
+                    if root.recent.length == 0: Text { text: @tr("No files saved yet"); color: Tokens.secondary; font-size: Tokens.small; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+        }
+    }
+}

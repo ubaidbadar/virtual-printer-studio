@@ -4,28 +4,25 @@ mod instance;
 mod platform;
 mod qa;
 mod service;
+mod view_model;
 use domain::*;
 use service::{Command, Service, Update};
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, Model, ModelRc};
 use std::{path::Path, sync::mpsc::Sender};
 slint::include_modules!();
-fn display_time(timestamp: i64) -> String {
-    let utc = match time::OffsetDateTime::from_unix_timestamp(timestamp) {
-        Ok(v) => v,
-        Err(_) => return String::new(),
-    };
-    let local =
-        utc.to_offset(time::UtcOffset::local_offset_at(utc).unwrap_or(time::UtcOffset::UTC));
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}",
-        local.year(),
-        u8::from(local.month()),
-        local.day(),
-        local.hour(),
-        local.minute()
-    )
-}
 fn refresh(ui: &AppWindow, state: &State) {
+    let utc = time::OffsetDateTime::now_utc();
+    let now = utc.to_offset(time::UtcOffset::local_offset_at(utc).unwrap_or(time::UtcOffset::UTC));
+    let is_today = |entry: &&Activity| {
+        time::OffsetDateTime::from_unix_timestamp(entry.created_unix)
+            .is_ok_and(|date| date.to_offset(now.offset()).date() == now.date())
+    };
+    let saved_today: Vec<_> = state
+        .activity
+        .iter()
+        .filter(|a| a.status == "Saved")
+        .filter(is_today)
+        .collect();
     let query = ui.get_search().to_lowercase();
     let filter = ui.get_filter();
     let rows: Vec<_> = state
@@ -38,12 +35,41 @@ fn refresh(ui: &AppWindow, state: &State) {
                 && (filter != 1 || p.enabled)
                 && (filter != 2 || attention)
         })
-        .map(|p| PrinterView {
+        .enumerate()
+        .map(|(index, p)| PrinterView {
             id: p.id.clone().into(),
             name: p.name.clone().into(),
             folder: p.folder.to_string_lossy().to_string().into(),
             enabled: p.enabled,
-            count: p.count.min(i32::MAX as u64) as i32,
+            count: saved_today
+                .iter()
+                .filter(|a| a.printer_id == p.id)
+                .count()
+                .min(i32::MAX as usize) as i32,
+            last_saved: if !p.folder.is_dir() {
+                "Can't save until the folder is available".into()
+            } else {
+                state
+                    .activity
+                    .iter()
+                    .rev()
+                    .find(|a| a.printer_id == p.id && a.status == "Saved")
+                    .map(|a| {
+                        format!(
+                            "{} · {}",
+                            a.file,
+                            view_model::relative_time(a.created_unix, now)
+                        )
+                    })
+                    .unwrap_or_else(|| "Nothing saved today".into())
+                    .into()
+            },
+            tone: if !p.folder.is_dir() || !p.last_error.is_empty() {
+                4
+            } else {
+                (index % 4) as i32
+            },
+            is_new: false,
             status: if !p.folder.is_dir() {
                 "Folder missing"
             } else if !p.last_error.is_empty() {
@@ -63,51 +89,153 @@ fn refresh(ui: &AppWindow, state: &State) {
         })
         .collect();
     let columns = ui.get_columns().clamp(1, 3) as usize;
-    let grid: Vec<ModelRc<PrinterView>> = rows
+    let mut grid_rows = rows.clone();
+    grid_rows.push(PrinterView {
+        is_new: true,
+        ..PrinterView::default()
+    });
+    let previous = ui.get_printer_rows();
+    let grid: Vec<ModelRc<PrinterView>> = grid_rows
         .chunks(columns)
-        .map(|row| ModelRc::new(VecModel::from(row.to_vec())))
+        .enumerate()
+        .map(|(index, row)| {
+            view_model::reconcile(previous.row_data(index).unwrap_or_default(), row.to_vec())
+        })
         .collect();
-    ui.set_printer_rows(ModelRc::new(VecModel::from(grid)));
-    ui.set_printers(ModelRc::new(VecModel::from(rows)));
+    ui.set_printer_rows(view_model::reconcile(previous, grid));
+    ui.set_printers(view_model::reconcile(ui.get_printers(), rows));
+    let mut names = vec![slint::SharedString::from("All printers")];
+    names.extend(
+        state
+            .printers
+            .iter()
+            .map(|p| slint::SharedString::from(p.name.as_str())),
+    );
+    ui.set_activity_printers(view_model::reconcile(ui.get_activity_printers(), names));
+    let selected = if ui.get_activity_printer() > 0 {
+        state
+            .printers
+            .get((ui.get_activity_printer() - 1) as usize)
+            .map(|p| p.id.as_str())
+    } else {
+        None
+    };
+    let date_filter = ui.get_activity_date();
     let query = ui.get_activity_search().to_lowercase();
     let filter = ui.get_activity_filter();
-    ui.set_activity(ModelRc::new(VecModel::from(
+    let activity_rows: Vec<_> = state
+        .activity
+        .iter()
+        .rev()
+        .filter(|a| {
+            let failed = a.status != "Saved";
+            let in_date = date_filter == 1
+                || time::OffsetDateTime::from_unix_timestamp(a.created_unix).is_ok_and(|date| {
+                    if date_filter == 0 {
+                        date.to_offset(now.offset()).date() == now.date()
+                    } else {
+                        a.created_unix >= now.unix_timestamp() - 7 * 86_400
+                    }
+                });
+            in_date
+                && selected.is_none_or(|id| a.printer_id == id)
+                && (filter != 1 || !failed)
+                && (filter != 2 || failed)
+                && (a.file.to_lowercase().contains(&query)
+                    || a.printer.to_lowercase().contains(&query)
+                    || a.status.to_lowercase().contains(&query))
+        })
+        .map(|a| view_model::activity_row(a, now))
+        .collect();
+    ui.set_activity(view_model::reconcile(ui.get_activity(), activity_rows));
+    ui.set_printer_count(state.printers.len().min(i32::MAX as usize) as i32);
+    ui.set_saved_count(saved_today.len().min(i32::MAX as usize) as i32);
+    ui.set_saved_space(
+        view_model::bytes_label(saved_today.iter().map(|a| a.size_bytes).sum()).into(),
+    );
+    ui.set_active_count(
+        state
+            .printers
+            .iter()
+            .filter(|p| {
+                p.enabled
+                    && p.folder.is_dir()
+                    && p.last_error.is_empty()
+                    && (!cfg!(windows) || p.installed)
+            })
+            .count()
+            .min(i32::MAX as usize) as i32,
+    );
+    ui.set_attention_count(
+        state
+            .printers
+            .iter()
+            .filter(|p| {
+                !p.folder.is_dir() || !p.last_error.is_empty() || (cfg!(windows) && !p.installed)
+            })
+            .count()
+            .min(i32::MAX as usize) as i32,
+    );
+    ui.set_failed_count(
+        state
+            .activity
+            .iter()
+            .filter(|a| a.status != "Saved")
+            .filter(is_today)
+            .count()
+            .min(i32::MAX as usize) as i32,
+    );
+    ui.set_any_enabled(state.printers.iter().any(|p| p.enabled));
+    ui.set_tray_files(view_model::reconcile(
+        ui.get_tray_files(),
         state
             .activity
             .iter()
             .rev()
-            .filter(|a| {
-                let failed = a.status != "Saved";
-                (filter != 1 || !failed)
-                    && (filter != 2 || failed)
-                    && (a.file.to_lowercase().contains(&query)
-                        || a.printer.to_lowercase().contains(&query)
-                        || a.status.to_lowercase().contains(&query))
-            })
-            .map(|a| ActivityView {
-                printer: a.printer.clone().into(),
-                file: a.file.clone().into(),
-                status: a.status.clone().into(),
-                path: a.path.clone().into(),
-                printer_id: a.printer_id.clone().into(),
-                failed: a.status != "Saved",
-                date: if a.created_unix == 0 {
-                    "Earlier activity".into()
-                } else {
-                    display_time(a.created_unix).into()
-                },
-            })
-            .collect::<Vec<_>>(),
-    )));
-    ui.set_printer_count(state.printers.len().min(i32::MAX as usize) as i32);
-    ui.set_saved_count(
-        state
-            .printers
+            .filter(|a| a.status == "Saved")
+            .take(3)
+            .map(|a| view_model::activity_row(a, now))
+            .collect(),
+    ));
+    if let Some(p) = state.printers.iter().find(|p| !p.folder.is_dir()) {
+        ui.set_attention_id(p.id.clone().into());
+        ui.set_attention_name(p.name.clone().into());
+        ui.set_attention_folder(p.folder.to_string_lossy().to_string().into());
+    } else {
+        ui.set_attention_id("".into());
+    }
+    if let Some(p) = state
+        .printers
+        .iter()
+        .find(|p| p.id == ui.get_edit_id().as_str())
+    {
+        ui.set_detail_enabled(p.enabled);
+        ui.set_detail_folder_ok(p.folder.is_dir());
+        ui.set_detail_write_ok(p.folder.is_dir() && p.last_error.is_empty());
+        ui.set_detail_status(
+            if !p.folder.is_dir() {
+                "Folder missing"
+            } else if !p.last_error.is_empty() {
+                "Needs attention"
+            } else if !p.enabled {
+                "Paused"
+            } else if cfg!(windows) && !p.installed {
+                "Not installed"
+            } else {
+                "Ready"
+            }
+            .into(),
+        );
+        let recent = state
+            .activity
             .iter()
-            .map(|p| p.count)
-            .fold(0u64, u64::saturating_add)
-            .min(i32::MAX as u64) as i32,
-    );
+            .rev()
+            .filter(|a| a.printer_id == p.id && a.status == "Saved")
+            .take(3)
+            .map(|a| view_model::activity_row(a, now))
+            .collect();
+        ui.set_recent_files(view_model::reconcile(ui.get_recent_files(), recent));
+    }
     ui.set_welcome(!state.welcomed);
     ui.set_applied_keep_tray(state.keep_tray);
     ui.global::<Tokens>().set_dark(match state.theme {
@@ -122,11 +250,16 @@ fn sync_settings(ui: &AppWindow, state: &State) {
     ui.set_keep_tray(state.keep_tray);
     ui.set_notifications(state.notifications);
     ui.set_startup(state.startup);
+    ui.set_history_index(match state.history_days {
+        30 => 0,
+        365 => 2,
+        0 => 3,
+        _ => 1,
+    });
 }
 fn apply(ui: &AppWindow, update: Update) {
     ui.set_capture_running(update.capture_running);
     ui.set_capture_port(update.capture_port as i32);
-    refresh(ui, &update.state);
     ui.set_busy(false);
     ui.set_queued_count(update.queued.min(i32::MAX as usize) as i32);
     if update.sync_settings {
@@ -136,7 +269,14 @@ fn apply(ui: &AppWindow, update: Update) {
         ui.set_message(update.message.into());
     }
     if update.close_editor {
-        ui.set_editor(false);
+        ui.set_editor(
+            !ui.get_edit_id().is_empty()
+                && update
+                    .state
+                    .printers
+                    .iter()
+                    .any(|p| p.id == ui.get_edit_id().as_str()),
+        );
         ui.set_confirm_delete(false);
     }
     if let Some(p) = update.editor {
@@ -148,6 +288,19 @@ fn apply(ui: &AppWindow, update: Update) {
         ui.set_open_after(p.open_after);
         ui.set_editor(true);
         ui.set_confirm_delete(false);
+    }
+    refresh(ui, &update.state);
+    if let Some(health) = update.editor_health {
+        ui.set_detail_write_ok(health.write);
+        ui.set_detail_service_ok(health.service);
+        ui.set_detail_space_ok(health.free_bytes.is_some_and(|bytes| bytes > 0));
+        ui.set_detail_free_space(
+            health
+                .free_bytes
+                .map(|bytes| format!("{} GB free", bytes / 1_073_741_824))
+                .unwrap_or_else(|| "Free space unavailable".into())
+                .into(),
+        );
     }
 }
 fn send(ui: &AppWindow, sender: &Sender<Command>, command: Command) {
@@ -250,6 +403,10 @@ fn run() -> anyhow::Result<()> {
         }
     }
     let ui = AppWindow::new()?;
+    if !cfg!(windows) {
+        ui.global::<Tokens>()
+            .set_font_family("Liberation Sans".into());
+    }
     ui.set_native_available(cfg!(windows));
     let Some(_instance) = instance::Instance::acquire(&data, &ui)? else {
         return Ok(());
@@ -278,6 +435,21 @@ fn run() -> anyhow::Result<()> {
     bind!(on_refresh, |u, tx| {
         send(&u, tx, Command::Refresh);
     });
+    ui.on_preview_pattern({
+        let weak = ui.as_weak();
+        move || {
+            if let Some(ui) = weak.upgrade() {
+                let utc = time::OffsetDateTime::now_utc();
+                let now = utc.to_offset(
+                    time::UtcOffset::local_offset_at(utc).unwrap_or(time::UtcOffset::UTC),
+                );
+                ui.set_pattern_preview(
+                    view_model::filename_preview(ui.get_pattern().as_str(), now).into(),
+                );
+            }
+        }
+    });
+    ui.invoke_preview_pattern();
     bind!(on_dismiss_welcome, |u, tx| {
         send(&u, tx, Command::Welcome);
     });
@@ -288,7 +460,8 @@ fn run() -> anyhow::Result<()> {
                             folder,
                             pattern,
                             monthly,
-                            open_after| {
+                            open_after,
+                            start_enabled| {
         send(
             &u,
             tx,
@@ -299,15 +472,41 @@ fn run() -> anyhow::Result<()> {
                 pattern: pattern.to_string(),
                 monthly,
                 open_after,
+                start_enabled,
             },
         );
     });
+    {
+        let weak = ui.as_weak();
+        let sender = service.sender.clone();
+        ui.on_choose_folder(move |id| {
+            let weak = weak.clone();
+            let sender = sender.clone();
+            let _ = slint::spawn_local(async move {
+                if let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await
+                    && let Some(ui) = weak.upgrade()
+                {
+                    send(
+                        &ui,
+                        &sender,
+                        Command::Relocate {
+                            id: id.to_string(),
+                            folder: folder.path().to_owned(),
+                        },
+                    );
+                }
+            });
+        });
+    }
     bind!(on_select_printer, |u, tx, id| {
         u.set_message("".into());
         send(&u, tx, Command::Select(id.to_string()));
     });
     bind!(on_toggle_printer, |u, tx, id, enabled| {
         send(&u, tx, Command::Toggle(id.to_string(), enabled));
+    });
+    bind!(on_toggle_all_printers, |u, tx, enabled| {
+        send(&u, tx, Command::SetAll(enabled));
     });
     bind!(on_delete_printer, |u, tx, id| {
         send(&u, tx, Command::Delete(id.to_string()));
@@ -335,6 +534,12 @@ fn run() -> anyhow::Result<()> {
                 tray: u.get_keep_tray(),
                 notifications: u.get_notifications(),
                 startup: u.get_startup(),
+                history_days: match u.get_history_index() {
+                    0 => 30,
+                    2 => 365,
+                    3 => 0,
+                    _ => 90,
+                },
             },
         );
     });
@@ -349,8 +554,22 @@ fn run() -> anyhow::Result<()> {
                     let value = folder.path().to_string_lossy().to_string().into();
                     if settings {
                         ui.set_default_folder(value);
+                        if !ui.get_welcome() {
+                            ui.invoke_save_settings();
+                        }
                     } else {
                         ui.set_folder(value);
+                        if !ui.get_edit_id().is_empty() && ui.get_editor() {
+                            ui.invoke_save_printer(
+                                ui.get_edit_id(),
+                                ui.get_printer_name(),
+                                ui.get_folder(),
+                                ui.get_pattern(),
+                                ui.get_monthly(),
+                                ui.get_open_after(),
+                                true,
+                            );
+                        }
                     }
                 }
             });
@@ -467,6 +686,109 @@ fn run() -> anyhow::Result<()> {
     #[cfg(windows)]
     let _tray = {
         let tray = AppTray::new()?;
+        let flyout = TrayWindow::new()?;
+        let tray_weak = tray.as_weak();
+        ui.on_show_tray(move || {
+            if let Some(tray) = tray_weak.upgrade() {
+                tray.invoke_popup();
+            }
+        });
+        let weak = ui.as_weak();
+        let menu = flyout.as_weak();
+        tray.on_popup(move || {
+            use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
+            if let (Some(ui), Some(menu)) = (weak.upgrade(), menu.upgrade()) {
+                menu.global::<Tokens>()
+                    .set_dark(ui.global::<Tokens>().get_dark());
+                menu.set_ready(ui.get_active_count());
+                menu.set_any_enabled(ui.get_any_enabled());
+                menu.set_busy(ui.get_busy());
+                menu.set_recent(ui.get_tray_files());
+                let _ = menu.show();
+                let size = menu.window().size();
+                if let Some((x, y)) = platform::tray_position(size.width as i32, size.height as i32)
+                {
+                    menu.window()
+                        .set_position(slint::PhysicalPosition::new(x, y));
+                }
+                let focused = std::cell::Cell::new(false);
+                menu.window().on_winit_window_event(move |window, event| {
+                    if let WindowEvent::Focused(active) = event {
+                        if *active {
+                            focused.set(true);
+                        } else if focused.replace(false) {
+                            let _ = window.hide();
+                        }
+                    }
+                    EventResult::Propagate
+                });
+            }
+        });
+        let weak = ui.as_weak();
+        let menu = flyout.as_weak();
+        flyout.on_open(move || {
+            if let Some(menu) = menu.upgrade() {
+                let _ = menu.hide();
+            }
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_reopen();
+            }
+        });
+        let weak = ui.as_weak();
+        let menu = flyout.as_weak();
+        flyout.on_toggle_all(move |enabled| {
+            if let Some(menu) = menu.upgrade() {
+                let _ = menu.hide();
+            }
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_toggle_all_printers(enabled);
+            }
+        });
+        let weak = ui.as_weak();
+        let menu = flyout.as_weak();
+        flyout.on_file(move |path| {
+            if let Some(menu) = menu.upgrade() {
+                let _ = menu.hide();
+            }
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_open_path(path);
+            }
+        });
+        let weak = ui.as_weak();
+        let menu = flyout.as_weak();
+        flyout.on_settings(move || {
+            if let Some(menu) = menu.upgrade() {
+                let _ = menu.hide();
+            }
+            if let Some(ui) = weak.upgrade() {
+                ui.set_editor(false);
+                ui.set_page(3);
+                ui.invoke_reopen();
+            }
+        });
+        let weak = ui.as_weak();
+        let menu = flyout.as_weak();
+        flyout.on_quit(move || {
+            if let Some(menu) = menu.upgrade() {
+                let _ = menu.hide();
+            }
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_quit();
+            }
+        });
+        let menu = flyout.as_weak();
+        flyout.on_dismiss(move || {
+            if let Some(menu) = menu.upgrade() {
+                let _ = menu.hide();
+            }
+        });
+        let menu = flyout.as_weak();
+        flyout.window().on_close_requested(move || {
+            if let Some(menu) = menu.upgrade() {
+                let _ = menu.hide();
+            }
+            slint::CloseRequestResponse::KeepWindowShown
+        });
         let weak = ui.as_weak();
         tray.on_reopen(move || {
             if let Some(ui) = weak.upgrade() {
@@ -482,6 +804,7 @@ fn run() -> anyhow::Result<()> {
         let weak = ui.as_weak();
         tray.on_settings(move || {
             if let Some(ui) = weak.upgrade() {
+                ui.set_editor(false);
                 ui.set_page(3);
                 ui.invoke_reopen();
             }
@@ -492,7 +815,7 @@ fn run() -> anyhow::Result<()> {
                 ui.invoke_quit();
             }
         });
-        tray
+        (tray, flyout)
     };
     ui.show()?;
     if cfg!(windows) && std::env::args().any(|arg| arg == "--background") {
@@ -511,6 +834,7 @@ mod ui_tests {
         i_slint_backend_testing::init_no_event_loop();
         let ui = AppWindow::new().expect("UI");
         ui.set_welcome(false);
+        ui.set_activity_date(1);
         let state = State {
             welcomed: true,
             printers: vec![Printer {
@@ -529,6 +853,7 @@ mod ui_tests {
                 printer_id: "one".into(),
                 job_id: "job1".into(),
                 created_unix: 1700000000,
+                size_bytes: 148 * 1024,
             }],
             ..State::default()
         };
@@ -536,6 +861,22 @@ mod ui_tests {
         refresh(&ui, &state);
         assert_eq!(ui.get_printers().row_count(), 1);
         assert_eq!(ui.get_activity().row_count(), 1);
+        ui.set_activity_date(0);
+        refresh(&ui, &state);
+        assert_eq!(
+            ui.get_activity().row_count(),
+            0,
+            "Today excludes older entries"
+        );
+        ui.set_activity_date(1);
+        ui.set_activity_printer(1);
+        refresh(&ui, &state);
+        assert_eq!(
+            ui.get_activity().row_count(),
+            1,
+            "Printer selection retains its entries"
+        );
+        ui.set_activity_printer(0);
         ui.set_search("missing".into());
         refresh(&ui, &state);
         assert_eq!(ui.get_printers().row_count(), 0);
@@ -581,19 +922,39 @@ mod ui_tests {
         ui.set_printer_name("Invoices".into());
         let saved = std::rc::Rc::new(std::cell::RefCell::new(None));
         let received = saved.clone();
-        ui.on_save_printer(move |id, name, folder, pattern, monthly, open_after| {
-            *received.borrow_mut() = Some((id, name, folder, pattern, monthly, open_after));
-        });
+        ui.on_save_printer(
+            move |id, name, folder, pattern, monthly, open_after, start_enabled| {
+                *received.borrow_mut() = Some((
+                    id,
+                    name,
+                    folder,
+                    pattern,
+                    monthly,
+                    open_after,
+                    start_enabled,
+                ));
+            },
+        );
         activate("Save printer");
         let saved_value = saved.borrow();
-        let (_, name, folder, pattern, monthly, open_after) =
+        let (_, name, folder, pattern, monthly, open_after, start_enabled) =
             saved_value.as_ref().expect("save callback");
         assert_eq!(name, "Invoices");
         assert_eq!(folder, "C:\\PDFs");
         assert_eq!(pattern, "{title}_{date}_{counter}");
-        assert!(!monthly && !open_after);
+        assert!(!monthly && !open_after && *start_enabled);
+        drop(saved_value);
+        ui.set_start_saving(false);
+        activate("Save printer");
+        assert!(!saved.borrow().as_ref().expect("paused creation callback").6);
         activate("Cancel");
         assert!(!ui.get_editor());
+        activate("+ New printer");
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+                text: slint::platform::Key::Escape.into(),
+            });
+        assert!(!ui.get_editor(), "Escape dismisses the new-printer dialog");
         activate("Presets");
         activate("Use preset");
         assert!(ui.get_editor());

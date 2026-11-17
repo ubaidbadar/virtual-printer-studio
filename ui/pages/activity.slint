@@ -1,0 +1,47 @@
+import { ListView } from "std-widgets.slint";
+import { Tokens } from "../theme/tokens.slint";
+import { ActivityView } from "../state.slint";
+import { StudioButton, StatusBadge, SettingsCard } from "../components/controls.slint";
+export component ActivityPage inherits Rectangle {
+    in property <[ActivityView]> activity;
+    in property <int> saved;
+    in property <int> failed;
+    in property <string> space;
+    in property <bool> disabled;
+    callback open(string); callback folder(string); callback fix(string);
+    HorizontalLayout { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: Tokens.px76; spacing: Tokens.s4;
+        for stat in [{label: @tr("Saved today"), value: root.saved + ""}, {label: @tr("Failed"), value: root.failed + ""}, {label: @tr("Space used today"), value: root.space}]: SettingsCard {
+            Text { x: Tokens.s4; y: Tokens.s3; height: Tokens.s5; text: stat.label; color: Tokens.secondary; font-size: Tokens.caption; }
+            Text { x: Tokens.s4; y: Tokens.s8; height: Tokens.s8; text: stat.value; color: Tokens.text; font-size: Tokens.stat-size; font-weight: Tokens.font-semibold; }
+        }
+    }
+    SettingsCard { y: Tokens.px92; height: min(parent.height - Tokens.px92, root.activity.length * Tokens.px61 + Tokens.s8);
+        clip: true;
+        Rectangle { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: Tokens.s8;
+            Text { x: Tokens.s4; y: Tokens.px0; height: parent.height; text: @tr("File"); color: Tokens.secondary; font-size: Tokens.caption; vertical-alignment: center; }
+            Text { y: Tokens.px0; height: parent.height; x: parent.width * 0.454; text: @tr("Printer"); color: Tokens.secondary; font-size: Tokens.caption; vertical-alignment: center; }
+            Text { y: Tokens.px0; height: parent.height; x: parent.width * 0.614; text: @tr("Time"); color: Tokens.secondary; font-size: Tokens.caption; vertical-alignment: center; }
+            Text { y: Tokens.px0; height: parent.height; x: parent.width * 0.733; text: @tr("Size"); color: Tokens.secondary; font-size: Tokens.caption; vertical-alignment: center; }
+            Rectangle { y: parent.height - Tokens.hairline; height: Tokens.hairline; background: Tokens.divider; }
+        }
+        ListView { y: Tokens.s8; height: parent.height - Tokens.s8;
+            for item in root.activity: Rectangle { height: Tokens.px61;
+                Rectangle { y: parent.height - Tokens.hairline; height: Tokens.hairline; background: Tokens.divider; }
+                Rectangle { x: Tokens.s4; y: Tokens.px14; width: Tokens.s8; height: Tokens.s8; border-radius: Tokens.nav-radius; background: Tokens.bg;
+                    Image { x: Tokens.s2; y: Tokens.s2; width: Tokens.icon; height: Tokens.icon; source: @image-url("../../assets/icons/file.svg"); colorize: item.failed ? Tokens.danger-fg : Tokens.accent-text; }
+                }
+                Text { x: Tokens.px60; y: item.failed ? Tokens.s2 : Tokens.px18; height: Tokens.s6; width: parent.width * 0.454 - Tokens.px76; text: item.file; color: Tokens.text; font-size: Tokens.body; font-weight: Tokens.font-semibold; overflow: elide; }
+                if item.failed: Text { x: Tokens.px60; y: Tokens.px30; height: Tokens.s5; width: parent.width * 0.454 - Tokens.px76; text: item.status; color: Tokens.danger-fg; font-size: Tokens.caption; overflow: elide; }
+                Text { y: Tokens.px0; height: parent.height; x: parent.width * 0.454; width: parent.width * 0.15; text: item.printer; color: Tokens.text; font-size: Tokens.body; vertical-alignment: center; overflow: elide; }
+                Text { y: Tokens.px0; height: parent.height; x: parent.width * 0.614; width: parent.width * 0.11; text: item.date; color: Tokens.text; font-size: Tokens.body; vertical-alignment: center; overflow: elide; }
+                if !item.failed: Text { y: Tokens.px0; height: parent.height; x: parent.width * 0.733; width: parent.width * 0.1; text: item.size; color: Tokens.text; font-size: Tokens.body; vertical-alignment: center; }
+                if item.failed: StatusBadge { x: parent.width * 0.733; y: Tokens.px22; text: @tr("Failed"); tone: 2; }
+                if !item.failed: StudioButton { x: parent.width - Tokens.px112; y: Tokens.px14; width: Tokens.s8; icon: @image-url("../../assets/icons/open.svg"); label: @tr("Open"); quiet: true; enabled: !root.disabled; clicked => { root.open(item.path); } }
+                if !item.failed: StudioButton { x: parent.width - Tokens.px80; y: Tokens.px14; width: Tokens.s8; icon: @image-url("../../assets/icons/folder.svg"); label: @tr("Show folder"); quiet: true; enabled: !root.disabled; clicked => { root.folder(item.path); } }
+                if !item.failed: StudioButton { x: parent.width - Tokens.px48; y: Tokens.px14; width: Tokens.s8; icon: @image-url("../../assets/icons/more.svg"); label: @tr("File details"); quiet: true; enabled: !root.disabled; clicked => { root.folder(item.path); } }
+                if item.failed: StudioButton { x: parent.width - Tokens.px70; y: Tokens.px14; text: @tr("Fix"); enabled: !root.disabled; clicked => { root.fix(item.printer-id); } }
+            }
+        }
+    }
+    if root.activity.length == 0: Text { y: Tokens.px150; text: @tr("No matching files. Print a document to see it here."); color: Tokens.secondary; font-size: Tokens.body; horizontal-alignment: center; }
+}

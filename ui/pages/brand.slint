@@ -1,0 +1,39 @@
+import { Tokens } from "../theme/tokens.slint";
+import { ActivityView } from "../state.slint";
+import { TrayFlyout, ToastPreview } from "../components/tray.slint";
+export component BrandBoard inherits Rectangle {
+    background: Tokens.bg;
+    Image { x: Tokens.px56; y: Tokens.px56; width: Tokens.px220; height: Tokens.px220; source: @image-url("../../assets/logo.svg"); }
+    Text { x: Tokens.px332; y: Tokens.px96; width: Tokens.px870; height: Tokens.px72; text: @tr("Virtual Printer Studio"); font-size: Tokens.brand-title; font-weight: Tokens.font-semibold; color: Tokens.text; }
+    Text { x: Tokens.px332; y: Tokens.px174; width: Tokens.px880; height: Tokens.px58; text: @tr("A dashed printer outline for virtual, with a green check for\nsaved."); font-size: Tokens.dialog-title; color: Tokens.secondary; }
+    for variant[i] in [{dark: false, label: @tr("On light")}, {dark: true, label: @tr("On dark")}]: Rectangle {
+        x: Tokens.px56 + i * Tokens.px396; y: Tokens.px308; width: Tokens.px376; height: Tokens.px200; border-radius: Tokens.panel-radius; border-width: Tokens.hairline; border-color: Tokens.brand-border; background: variant.dark ? Tokens.preview-dark : Tokens.white;
+        Text { x: Tokens.s7; y: Tokens.s7; width: parent.width - Tokens.px56; height: Tokens.s5; text: variant.label; color: variant.dark ? Tokens.white : Tokens.secondary; font-size: Tokens.caption; }
+        Image { x: Tokens.s7; y: Tokens.px123; width: Tokens.px48; height: Tokens.px48; source: @image-url("../../assets/logo.svg"); }
+        Text { x: Tokens.px92; y: Tokens.px128; width: parent.width - Tokens.px108; height: Tokens.px36; text: @tr("Virtual Printer Studio"); color: variant.dark ? Tokens.white : Tokens.text; font-size: Tokens.dialog-title; font-weight: Tokens.font-semibold; }
+    }
+    Rectangle { x: Tokens.px848; y: Tokens.px308; width: Tokens.px376; height: Tokens.px200; border-radius: Tokens.panel-radius; border-width: Tokens.hairline; border-color: Tokens.brand-border; background: Tokens.white;
+        Text { x: Tokens.s7; y: Tokens.s7; width: parent.width - Tokens.px56; height: Tokens.s5; text: @tr("App icon sizes"); color: Tokens.secondary; font-size: Tokens.caption; }
+        Image { x: Tokens.s7; y: Tokens.px107; width: Tokens.px64; height: Tokens.px64; source: @image-url("../../assets/logo.svg"); }
+        Image { x: Tokens.px112; y: Tokens.px131; width: Tokens.px40; height: Tokens.px40; source: @image-url("../../assets/logo.svg"); }
+        Image { x: Tokens.px172; y: Tokens.px147; width: Tokens.px24; height: Tokens.px24; source: @image-url("../../assets/logo.svg"); }
+        Image { x: Tokens.px216; y: Tokens.px155; width: Tokens.px16; height: Tokens.px16; source: @image-url("../../assets/logo-small.svg"); }
+    }
+    for swatch[i] in [{name: @tr("Studio blue"), value: "#0F6CBD", color: Tokens.accent}, {name: @tr("Navy"), value: "#0B2A4A", color: Tokens.brand-navy}, {name: @tr("Outline white"), value: "#FFFFFF", color: Tokens.white}, {name: @tr("Ready green"), value: "#2EA043", color: Tokens.brand-green}]: Rectangle {
+        x: Tokens.px56 + i * Tokens.px130; y: Tokens.px540; width: Tokens.px106; height: Tokens.px108;
+        Rectangle { x: Tokens.px0; y: Tokens.px0; width: parent.width; height: Tokens.px58; border-radius: Tokens.nav-radius; border-width: Tokens.hairline; border-color: Tokens.brand-border; background: swatch.color; }
+        Text { x: Tokens.px0; y: Tokens.px64; width: parent.width; height: Tokens.s4; text: swatch.name; color: Tokens.text; font-size: Tokens.caption; font-weight: Tokens.font-semibold; }
+        Text { x: Tokens.px0; y: Tokens.px80; width: parent.width; height: Tokens.s4; text: swatch.value; color: Tokens.text; font-size: Tokens.caption; }
+    }
+}
+export component TrayBoard inherits Rectangle {
+    in property <[ActivityView]> recent;
+    background: Tokens.desktop-bg;
+    ToastPreview { x: parent.width - Tokens.px376; y: Tokens.px179; width: Tokens.px360; height: Tokens.px140; file: "Invoice_2026-11-15_14-32.pdf"; description: @tr("Invoices · 148 KB"); }
+    TrayFlyout { x: parent.width - Tokens.px316; y: parent.height - Tokens.px418; width: Tokens.px300; height: Tokens.px360; ready: 5; any-enabled: true; recent: root.recent; }
+    Rectangle { y: parent.height - Tokens.px48; height: Tokens.px48; background: Tokens.taskbar-bg;
+        Image { x: parent.width - Tokens.px110; y: Tokens.s4; width: Tokens.icon; height: Tokens.icon; source: @image-url("../../assets/logo-small.svg"); }
+        Text { x: parent.width - Tokens.px80; y: Tokens.s2; width: Tokens.px64; height: Tokens.s4; text: "2:32 PM"; color: Tokens.white; font-size: Tokens.caption; horizontal-alignment: right; }
+        Text { x: parent.width - Tokens.px80; y: Tokens.s6; width: Tokens.px64; height: Tokens.s4; text: "15/11/2026"; color: Tokens.white; font-size: Tokens.caption; horizontal-alignment: right; }
+    }
+}

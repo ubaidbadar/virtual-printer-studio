@@ -1,0 +1,90 @@
+import { ScrollView } from "std-widgets.slint";
+import { Tokens } from "../theme/tokens.slint";
+import { StudioSelect, StudioField, StudioButton, StudioToggle, SectionTitle, SettingsCard, SettingRow } from "../components/controls.slint";
+export component SettingsPage inherits ScrollView {
+    in-out property <bool> startup;
+    in-out property <bool> tray;
+    in-out property <bool> notifications;
+    in-out property <int> theme: 2;
+    in-out property <int> history: 1;
+    in-out property <string> folder;
+    in property <bool> native-available;
+    in property <bool> disabled;
+    callback save(); callback browse(); callback export(); callback import(); callback diagnostics(); callback logs(); callback open(string);
+    content-width: root.width;
+    content-height: content.min-height;
+    content := VerticalLayout {
+        x: Tokens.px0; y: Tokens.px0;
+        width: min(Tokens.px820, root.width - Tokens.s4); spacing: Tokens.s5;
+        VerticalLayout { spacing: Tokens.s2;
+            SectionTitle { text: @tr("Startup"); }
+            SettingsCard { height: Tokens.px172; VerticalLayout { spacing: Tokens.px0;
+                SettingRow { title: @tr("Start with Windows"); description: @tr("So your printers are ready when you are");
+                    StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Start with Windows"); checked <=> root.startup; enabled: !root.disabled && root.native-available; toggled => { root.save(); } }
+                }
+                SettingRow { title: @tr("Keep running in the tray"); description: @tr("Closing the window doesn't stop saving");
+                    StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Keep running in the tray"); checked <=> root.tray; enabled: !root.disabled && root.native-available; toggled => { root.save(); } }
+                }
+                SettingRow { title: @tr("Show a notification when a PDF is saved"); description: @tr("Includes Open and Show folder buttons"); last: true;
+                    StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Show saved PDF notifications"); checked <=> root.notifications; enabled: !root.disabled && root.native-available; toggled => { root.save(); } }
+                }
+            } }
+        }
+        VerticalLayout { spacing: Tokens.s2;
+            SectionTitle { text: @tr("Appearance"); }
+            SettingsCard { height: Tokens.px115; VerticalLayout { spacing: Tokens.px0;
+                SettingRow { title: @tr("Theme"); description: @tr("Match Windows or choose one");
+                    StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("Light"), @tr("Dark"), @tr("Use system setting")]; current-index <=> root.theme; enabled: !root.disabled; selected => { root.save(); } }
+                }
+                SettingRow { title: @tr("Language"); description: @tr("Restart not needed"); last: true;
+                    StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("English")]; current-index: 0; enabled: !root.disabled; }
+                }
+            } }
+        }
+        VerticalLayout { spacing: Tokens.s2;
+            SectionTitle { text: @tr("Storage"); }
+            SettingsCard { height: Tokens.px115; VerticalLayout { spacing: Tokens.px0;
+                SettingRow { title: @tr("Default save folder"); description: @tr("Used for new printers");
+                    StudioField { x: max(Tokens.px240, parent.width - Tokens.px376); y: Tokens.s3; width: Tokens.px260; height: Tokens.control-height; text <=> root.folder; accessible-label: @tr("Default output folder"); enabled: !root.disabled; accepted => { root.save(); } }
+                    StudioButton { x: parent.width - Tokens.px100; y: Tokens.s3; width: Tokens.px84; text: @tr("Browse"); enabled: !root.disabled; clicked => { root.browse(); } }
+                }
+                SettingRow { title: @tr("Keep activity history"); description: @tr("Older entries are removed, your PDFs are not"); last: true;
+                    StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("30 days"), @tr("90 days"), @tr("1 year"), @tr("No age limit")]; current-index <=> root.history; enabled: !root.disabled; selected => { root.save(); } }
+                }
+            } }
+        }
+        VerticalLayout { spacing: Tokens.s2;
+            SectionTitle { text: @tr("Backup"); }
+            SettingsCard { height: Tokens.px115; VerticalLayout { spacing: Tokens.px0;
+                SettingRow { title: @tr("Export all printers"); description: @tr("Save your setup to a file");
+                    StudioButton { x: parent.width - Tokens.px93; y: Tokens.s3; text: @tr("Export"); enabled: !root.disabled; clicked => { root.export(); } }
+                }
+                SettingRow { title: @tr("Import printers"); description: @tr("Move to a new PC in one step"); last: true;
+                    StudioButton { x: parent.width - Tokens.px93; y: Tokens.s3; text: @tr("Import"); enabled: !root.disabled; clicked => { root.import(); } }
+                }
+            } }
+        }
+        VerticalLayout { spacing: Tokens.s2;
+            SectionTitle { text: @tr("Help"); }
+            SettingsCard { height: Tokens.px115; VerticalLayout { spacing: Tokens.px0;
+                SettingRow { title: @tr("Copy diagnostics"); description: @tr("For when you contact support");
+                    StudioButton { x: parent.width - Tokens.px82; y: Tokens.s3; text: @tr("Copy"); enabled: !root.disabled; clicked => { root.diagnostics(); } }
+                }
+                SettingRow { title: @tr("Open log folder"); last: true;
+                    StudioButton { x: parent.width - Tokens.px93; y: Tokens.s3; text: @tr("Open"); icon: @image-url("../../assets/icons/folder.svg"); enabled: !root.disabled; clicked => { root.logs(); } }
+                }
+            } }
+        }
+        VerticalLayout { spacing: Tokens.s2;
+            SectionTitle { text: @tr("About"); }
+            SettingsCard { height: Tokens.px115; VerticalLayout { spacing: Tokens.px0;
+                SettingRow { title: @tr("Virtual Printer Studio"); description: @tr("Version 0.2.0 · Made with Slint");
+                    StudioButton { x: parent.width - Tokens.px172; y: Tokens.s3; text: @tr("Check for updates"); enabled: !root.disabled; clicked => { root.open("https://github.com/ubaidbadar/virtual-printer-studio/releases"); } }
+                }
+                SettingRow { title: @tr("Licence"); description: @tr("Slint and open-source licences"); last: true;
+                    StudioButton { x: parent.width - Tokens.px82; y: Tokens.s3; text: @tr("View"); enabled: !root.disabled; clicked => { root.open("https://slint.dev/licensing"); } }
+                }
+            } }
+        }
+    }
+}

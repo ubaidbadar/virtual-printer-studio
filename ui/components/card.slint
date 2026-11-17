@@ -1,27 +1,42 @@
-import { Button, Switch } from "std-widgets.slint";
 import { Tokens } from "../theme/tokens.slint";
-export struct PrinterView { id: string, name: string, folder: string, status: string, enabled: bool, count: int }
+import { StudioButton, StudioToggle, StatusBadge } from "controls.slint";
+export struct PrinterView { id: string, name: string, folder: string, status: string, enabled: bool, count: int, last-saved: string, tone: int, is-new: bool }
 export component PrinterCard inherits Rectangle {
     in property <PrinterView> printer;
     in property <bool> busy;
-    callback details(); callback toggle(bool); callback test();
-    min-height: 166px;
-    background: Tokens.surface; border-color: Tokens.border; border-width: 1px; border-radius: Tokens.radius;
-    VerticalLayout {
-        padding: Tokens.gap; spacing: 10px;
-        HorizontalLayout {
-            spacing: 10px;
-            Text { text: "▣"; color: Tokens.accent; font-size: 26px; }
-            Text { text: root.printer.name; color: Tokens.text; font-size: 17px; font-weight: 600; horizontal-stretch: 1; }
-            Text { text: root.printer.status; color: Tokens.secondary; font-size: 12px; }
-        }
-        Text { text: root.printer.folder; color: Tokens.secondary; overflow: elide; }
-        Text { text: @tr("{} PDFs saved", root.printer.count); color: Tokens.secondary; }
-        HorizontalLayout {
-            spacing: 10px;
-            Button { enabled: !root.busy; text: @tr("Details"); clicked => { root.details(); } }
-            Button { enabled: !root.busy; text: @tr("Test PDF"); clicked => { root.test(); } }
-            Switch { enabled: !root.busy; checked: root.printer.enabled; accessible-label: @tr("Enable printer"); toggled => { root.toggle(self.checked); } }
+    callback details(); callback toggle(bool); callback test(); callback open-folder();
+    height: Tokens.card-height;
+    background: Tokens.surface;
+    border-color: root.printer.status == "Folder missing" ? Tokens.card-danger-border : Tokens.border;
+    border-width: Tokens.hairline; border-radius: Tokens.radius;
+    accessible-role: button; accessible-label: @tr("Details"); accessible-description: root.printer.name;
+    accessible-enabled: !root.busy;
+    accessible-action-default => { if !root.busy { root.details(); } }
+    TouchArea { enabled: !root.busy; clicked => { root.details(); } }
+    Rectangle {
+        x: Tokens.s4; y: Tokens.s4; width: Tokens.icon-tile; height: Tokens.icon-tile; border-radius: Tokens.radius;
+        background: root.printer.tone == 4 ? Tokens.danger-bg : root.printer.tone == 3 ? Tokens.tile-yellow : root.printer.tone == 2 ? Tokens.tile-purple : root.printer.tone == 1 ? Tokens.tile-green : Tokens.tile-blue;
+        Image { x: Tokens.s2; y: Tokens.s2; width: Tokens.s6; height: Tokens.s6; source: @image-url("../../assets/icons/printer.svg"); colorize: root.printer.tone == 4 ? Tokens.danger-fg : root.printer.tone == 3 ? Tokens.yellow : root.printer.tone == 2 ? Tokens.purple : root.printer.tone == 1 ? Tokens.success-fg : Tokens.accent-text; }
+    }
+    Text { x: Tokens.px68; y: Tokens.s6; width: max(Tokens.px0, badge.x - self.x - Tokens.s3); height: Tokens.s6; text: root.printer.name; color: Tokens.text; font-size: Tokens.section; font-weight: Tokens.font-semibold; overflow: elide; }
+    badge := StatusBadge { x: parent.width - self.width - Tokens.s4; y: Tokens.s7; text: root.printer.status; tone: root.printer.status == "Ready" ? 1 : root.printer.status == "Paused" ? 0 : 2; }
+    Image { x: Tokens.s4; y: Tokens.px72; width: Tokens.s3; height: Tokens.s3; source: @image-url("../../assets/icons/folder.svg"); colorize: Tokens.secondary; }
+    Text { x: Tokens.px36; y: Tokens.px68; width: parent.width - Tokens.px52; height: Tokens.s5; text: root.printer.folder; color: Tokens.secondary; font-size: Tokens.small; overflow: elide; }
+    Text { x: Tokens.s4; y: Tokens.px88; width: parent.width - Tokens.s8; height: Tokens.s5; text: root.printer.last-saved; color: Tokens.secondary; font-size: Tokens.small; overflow: elide; }
+    Rectangle { x: Tokens.s4; y: Tokens.px119; width: parent.width - Tokens.s8; height: Tokens.hairline; background: Tokens.divider; }
+    HorizontalLayout { x: Tokens.s4; y: Tokens.px132; height: Tokens.control-height; spacing: Tokens.s1; alignment: start;
+        Text { text: root.printer.count; color: Tokens.text; font-size: Tokens.small; font-weight: Tokens.font-semibold; vertical-alignment: center; }
+        Text { text: @tr("saved today"); color: Tokens.text; font-size: Tokens.small; vertical-alignment: center; }
+    }
+    StudioToggle { x: parent.width - Tokens.px96; y: Tokens.px132; checked: root.printer.enabled; label: @tr("Enable printer"); enabled: !root.busy; toggled(value) => { root.toggle(value); } }
+    StudioButton { x: parent.width - Tokens.px48; y: Tokens.px132; width: Tokens.control-height; icon: @image-url("../../assets/icons/more.svg"); label: @tr("More printer actions"); quiet: true; enabled: !root.busy; clicked => { actions.show(); } }
+    actions := PopupWindow { x: parent.width - Tokens.px200; y: Tokens.px164; width: Tokens.px200; height: Tokens.px120;
+        Rectangle { background: Tokens.surface; border-color: Tokens.border; border-width: Tokens.hairline; border-radius: Tokens.radius;
+            VerticalLayout { padding: Tokens.s1; spacing: Tokens.s1;
+                StudioButton { text: @tr("Printer details"); quiet: true; clicked => { actions.close(); root.details(); } }
+                StudioButton { text: @tr("Print test page"); quiet: true; clicked => { actions.close(); root.test(); } }
+                StudioButton { text: @tr("Open folder"); quiet: true; clicked => { actions.close(); root.open-folder(); } }
+            }
         }
     }
 }

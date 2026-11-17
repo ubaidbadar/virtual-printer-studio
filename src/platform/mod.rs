@@ -1,6 +1,12 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use vps_core::Printer;
+#[derive(Clone, Default, serde::Deserialize)]
+pub struct PrinterHealth {
+    pub write: bool,
+    pub service: bool,
+    pub free_bytes: Option<u64>,
+}
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
@@ -24,7 +30,7 @@ pub fn system_dark() -> bool {
     false
 }
 #[cfg(not(windows))]
-pub fn notify_saved(_path: &Path) -> Result<()> {
+pub fn notify_saved(_path: &Path, _printer: &str) -> Result<()> {
     Ok(())
 }
 pub fn spool_root(data: &Path) -> PathBuf {

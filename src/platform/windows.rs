@@ -143,7 +143,32 @@ fn xml(text: &str) -> String {
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
 }
-pub fn notify_saved(path: &Path) -> Result<()> {
+pub fn tray_position(width: i32, height: i32) -> Option<(i32, i32)> {
+    use windows_sys::Win32::{
+        Foundation::POINT,
+        Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint},
+        UI::WindowsAndMessaging::GetCursorPos,
+    };
+    // SAFETY: the APIs write only to live local POINT/MONITORINFO buffers, and
+    // the monitor handle is used synchronously. No pointer escapes this call.
+    unsafe {
+        let mut cursor = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut cursor) == 0 {
+            return None;
+        }
+        let monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return None;
+        }
+        Some((
+            (info.rcWork.right - width - 16).max(info.rcWork.left),
+            (info.rcWork.bottom - height - 12).max(info.rcWork.top),
+        ))
+    }
+}
+pub fn notify_saved(path: &Path, printer: &str) -> Result<()> {
     use ::windows::{
         Data::Xml::Dom::XmlDocument,
         Foundation::TypedEventHandler,
@@ -160,7 +185,9 @@ pub fn notify_saved(path: &Path) -> Result<()> {
     let (key, _) = hkcu.create_subkey("Software\\Classes\\AppUserModelId\\VirtualPrinterStudio")?;
     key.set_value("DisplayName", &"Virtual Printer Studio")?;
     let doc = XmlDocument::new()?;
-    doc.LoadXml(&HSTRING::from(format!("<toast><visual><binding template=\"ToastGeneric\"><text>PDF saved</text><text>{}</text></binding></visual><actions><action content=\"Open\" arguments=\"open\" activationType=\"foreground\"/><action content=\"Show folder\" arguments=\"folder\" activationType=\"foreground\"/></actions></toast>",xml(&path.file_name().unwrap_or_default().to_string_lossy()))))?;
+    let size =
+        crate::view_model::bytes_label(std::fs::metadata(path).map(|m| m.len()).unwrap_or(0));
+    doc.LoadXml(&HSTRING::from(format!("<toast><visual><binding template=\"ToastGeneric\"><text>Saved {}</text><text>{} · {}</text></binding></visual><actions><action content=\"Open\" arguments=\"open\" activationType=\"foreground\"/><action content=\"Show folder\" arguments=\"folder\" activationType=\"foreground\"/></actions></toast>",xml(&path.file_name().unwrap_or_default().to_string_lossy()),xml(printer),xml(&size))))?;
     let toast = ToastNotification::CreateToastNotification(&doc)?;
     let destination = path.to_owned();
     toast.Activated(&TypedEventHandler::new(
@@ -221,10 +248,11 @@ pub fn watch_theme(on_change: impl Fn() + Send + 'static) {
     });
 }
 
-pub fn health(printer: &Printer) -> Result<String> {
+pub fn health(printer: &Printer) -> Result<PrinterHealth> {
     let port = literal(&format!("VPS_{}", printer.id));
+    let folder = literal(&printer.folder.to_string_lossy());
     let script = format!(
-        "$ErrorActionPreference='Stop'; if ((Get-Service Spooler).Status -ne 'Running'){{throw 'The Windows Print Spooler is stopped. Start it from Services, then retry.'}}; $p=Get-Printer | Where-Object PortName -eq {port} | Select-Object -First 1; if (!$p){{throw 'The Windows printer is missing. Select Install or repair.'}}; $n=@(Get-PrintJob -PrinterName $p.Name).Count; Write-Output \"Folder writable. Windows Print Spooler running. $n job(s) in the Windows queue.\""
+        "$ErrorActionPreference='Stop'; if ((Get-Service Spooler).Status -ne 'Running'){{throw 'The Windows Print Spooler is stopped. Start it from Services, then retry.'}}; $p=Get-Printer | Where-Object PortName -eq {port} | Select-Object -First 1; if (!$p){{throw 'The Windows printer is missing. Select Install or repair.'}}; $free=(Get-Item -LiteralPath {folder}).PSDrive.Free; @{{write=$true;service=$true;free_bytes=$free}}|ConvertTo-Json -Compress"
     );
     let output = powershell(&script)?;
     ensure!(
@@ -232,7 +260,12 @@ pub fn health(printer: &Printer) -> Result<String> {
         "{}",
         String::from_utf8_lossy(&output.stderr).trim()
     );
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    Ok(serde_json::from_slice(
+        output
+            .stdout
+            .strip_prefix(&[0xef, 0xbb, 0xbf])
+            .unwrap_or(&output.stdout),
+    )?)
 }
 
 fn register_notification_shortcut() -> Result<()> {
