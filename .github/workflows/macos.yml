@@ -55,3 +55,31 @@ jobs:
           name: macos-print-evidence
           path: target/macos-evidence/
           if-no-files-found: ignore
+  macos-tahoe:
+    name: Verify package on macOS 26
+    needs: macos
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: VirtualPrinterStudio-AppleSilicon
+          path: target/
+      - name: Extract the exact downloadable Apple Silicon app
+        run: |
+          test "$(uname -m)" = arm64
+          mkdir -p target/macos-package
+          ditto -x -k target/VirtualPrinterStudio-AppleSilicon.zip target/macos-package
+          codesign --verify --deep --strict 'target/macos-package/Virtual Printer Studio.app'
+      - name: Native CUPS and AppKit printing on macOS 26
+        run: python3 scripts/qa/macos-smoke.py
+      - name: Render the app on macOS 26
+        run: |
+          'target/macos-package/Virtual Printer Studio.app/Contents/MacOS/virtual-printer-studio' --ui-snapshot target/macos-evidence/screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-26-print-evidence
+          path: target/macos-evidence/
+          if-no-files-found: ignore

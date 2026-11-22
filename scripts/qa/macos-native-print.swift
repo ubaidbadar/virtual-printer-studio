@@ -7,6 +7,9 @@ if mode=="verify" {
     guard let doc=PDFDocument(url:URL(fileURLWithPath:args[2])),doc.pageCount>0 else {fatalError("Invalid delivered PDF")}
     guard let text=doc.string,text.contains(args[3]) else {fatalError("Delivered PDF is missing its printed content")}
     let size=doc.page(at:0)!.bounds(for:.mediaBox).size
+    if args.count>5 {
+        guard let w=Double(args[4]),let h=Double(args[5]),abs(size.width-w)<1,abs(size.height-h)<1 else {fatalError("Receipt paper dimensions were not preserved")}
+    }
     print("Verified \(doc.pageCount) page(s), \(size.width)x\(size.height) points")
 } else {
     class ReceiptView:NSView {

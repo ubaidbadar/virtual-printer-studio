@@ -332,9 +332,12 @@ fn main() -> std::process::ExitCode {
 
     if let Err(error) = run() {
         eprintln!("{error:#}");
-        if !std::env::args()
-            .any(|arg| arg == "--process-pending" || arg == "--serve" || arg == "--ui-snapshot")
-        {
+        if !std::env::args().any(|arg| {
+            arg == "--process-pending"
+                || arg == "--serve"
+                || arg == "--ui-snapshot"
+                || arg == "--macos-printer-action"
+        }) {
             rfd::MessageDialog::new()
                 .set_title("Virtual Printer Studio")
                 .set_description(format!("{error:#}"))

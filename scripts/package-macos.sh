@@ -31,7 +31,7 @@ iconutil -c icns "$icons" -o "$bundle/Contents/Resources/AppIcon.icns"
 codesign --force --sign - --timestamp=none "$bundle/Contents/Helpers/vps-cups-filter"
 codesign --force --sign - --timestamp=none "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
-lipo -verify_arch arm64 "$bundle/Contents/MacOS/virtual-printer-studio"
+lipo "$bundle/Contents/MacOS/virtual-printer-studio" -verify_arch arm64
 file "$bundle/Contents/MacOS/virtual-printer-studio"
 otool -L "$bundle/Contents/MacOS/virtual-printer-studio"
 cp docs/macos.md "$package/Read me.txt"

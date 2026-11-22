@@ -15,6 +15,12 @@ pub fn snapshots(output: &Path) -> anyhow::Result<()> {
         ui.global::<Tokens>()
             .set_font_family("Liberation Sans".into());
     }
+    #[cfg(target_os = "macos")]
+    {
+        ui.global::<Tokens>()
+            .set_font_family("Helvetica Neue".into());
+        ui.set_macos(true);
+    }
     ui.set_native_available(true);
     ui.set_capture_running(true);
     ui.set_welcome(false);

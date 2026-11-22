@@ -7,7 +7,7 @@ evidence.mkdir(parents=True,exist_ok=True)
 app=root/'target/macos-package/Virtual Printer Studio.app/Contents/MacOS/virtual-printer-studio'
 checks=[]
 def run(*args,**kwargs):
-    result=subprocess.run([str(a) for a in args],text=True,capture_output=True,**kwargs)
+    result=subprocess.run([str(a) for a in args],text=True,capture_output=True,timeout=120,**kwargs)
     if result.returncode:
         raise RuntimeError(f'{args[0]} failed: {result.stdout}\n{result.stderr}')
     return result.stdout.strip()
@@ -56,7 +56,7 @@ try:
     run('/usr/bin/swift',root/'scripts/qa/macos-native-print.swift','print',queue,token)
     wait_until(lambda:len(list(output.glob('*.pdf')))>=2,'native AppKit document')
     native=[p for p in output.glob('*.pdf') if p!=pdf][0]
-    geometry=run('/usr/bin/swift',root/'scripts/qa/macos-native-print.swift','verify',native,token)
+    geometry=run('/usr/bin/swift',root/'scripts/qa/macos-native-print.swift','verify',native,token,'227','425')
     (evidence/'native-receipt.txt').write_text(geometry+'\n')
     passed('actual AppKit print operation preserves printed content')
     run(app,'--macos-printer-action','pause','--state',state,'--printer',id)
@@ -95,7 +95,7 @@ finally:
     if service is not None:service.terminate();service.wait(timeout=15)
     if installed:
         subprocess.run(['/usr/bin/cancel','-a',queue],capture_output=True)
-        result=subprocess.run([str(app),'--macos-printer-action','remove','--state',str(state),'--printer',id],capture_output=True,text=True)
+        result=subprocess.run([str(app),'--macos-printer-action','remove','--state',str(state),'--printer',id],capture_output=True,text=True,timeout=60)
         (evidence/'cleanup.txt').write_text(result.stdout+result.stderr)
     (evidence/'completed-checks.json').write_text(json.dumps(checks,indent=2))
     subprocess.run(['/usr/bin/lpstat','-t'],stdout=(evidence/'cups-state.txt').open('w'),stderr=subprocess.STDOUT)
