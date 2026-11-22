@@ -112,6 +112,8 @@ impl Service {
                                 failures.clear();
                                 if capture.is_none(){capture=start_capture(&mut state,&path,root.clone(),routes.clone(),tx_actions.clone(),pending.clone())?;}
                             }
+                            #[cfg(target_os="macos")]
+                            if matches!(command,Command::Retry) && capture.is_some(){platform::retry_queues(&state.printers)?;}
                             pending.store(false,Ordering::Release);
                             let delivered=scan(&mut state,&path,&root,&data,&mut failures,&log)?;
                             Ok(if delivered>0{format!("Saved {delivered} PDF(s).")}else if matches!(command,Command::Retry){"Retried all pending jobs. Check Activity for any remaining problems.".into()}else{String::new()})
@@ -219,6 +221,9 @@ impl Service {
             sender: tx,
             join: Some(join),
         };
+        #[cfg(target_os = "macos")]
+        let _ = service.sender.send(Command::Retry);
+        #[cfg(not(target_os = "macos"))]
         let _ = service.sender.send(Command::Scan);
         Ok(service)
     }

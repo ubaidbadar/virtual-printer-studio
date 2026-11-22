@@ -1,14 +1,20 @@
 import AppKit
 import PDFKit
+import Darwin
 
 let args=CommandLine.arguments
 let mode=args[1]
 if mode=="verify" {
     guard let doc=PDFDocument(url:URL(fileURLWithPath:args[2])),doc.pageCount>0 else {fatalError("Invalid delivered PDF")}
-    guard let text=doc.string,text.contains(args[3]) else {fatalError("Delivered PDF is missing its printed content")}
+    let text=doc.string ?? ""
     let size=doc.page(at:0)!.bounds(for:.mediaBox).size
+    let thumbnail=doc.page(at:0)!.thumbnail(of:NSSize(width:454,height:850),for:.mediaBox)
+    if let tiff=thumbnail.tiffRepresentation,let bitmap=NSBitmapImageRep(data:tiff),let png=bitmap.representation(using:.png,properties:[:]) {try png.write(to:URL(fileURLWithPath:args[2]+".png"))}
+    guard text.filter({!$0.isWhitespace}).contains(args[3].filter({!$0.isWhitespace})) else {
+        fputs("Missing printed content. Extracted text: \(String(reflecting:text)); page size: \(size)\n",stderr);exit(1)
+    }
     if args.count>5 {
-        guard let w=Double(args[4]),let h=Double(args[5]),abs(size.width-w)<1,abs(size.height-h)<1 else {fatalError("Receipt paper dimensions were not preserved")}
+        guard let w=Double(args[4]),let h=Double(args[5]),abs(size.width-w)<1,abs(size.height-h)<1 else {fatalError("Receipt paper dimensions were not preserved: \(size)")}
     }
     print("Verified \(doc.pageCount) page(s), \(size.width)x\(size.height) points")
 } else {

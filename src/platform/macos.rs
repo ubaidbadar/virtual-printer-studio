@@ -418,3 +418,72 @@ pub fn authorize_unix(stream: &UnixStream) -> Result<()> {
     );
     Ok(())
 }
+
+// cups_job_t from the public CUPS 2.x cups/cups.h ABI. macOS arm64 uses
+// 32-bit int/ipp_jstate_t and 64-bit time_t.
+#[repr(C)]
+struct CupsJob {
+    id: i32,
+    destination: *mut std::ffi::c_char,
+    title: *mut std::ffi::c_char,
+    user: *mut std::ffi::c_char,
+    format: *mut std::ffi::c_char,
+    state: i32,
+    size: i32,
+    priority: i32,
+    completed_time: i64,
+    creation_time: i64,
+    processing_time: i64,
+}
+#[link(name = "cups")]
+unsafe extern "C" {
+    fn cupsGetJobs2(
+        http: *mut std::ffi::c_void,
+        jobs: *mut *mut CupsJob,
+        name: *const std::ffi::c_char,
+        my_jobs: i32,
+        which_jobs: i32,
+    ) -> i32;
+    fn cupsFreeJobs(count: i32, jobs: *mut CupsJob);
+}
+fn retry_stopped(printer: &Printer) -> Result<usize> {
+    let name = queue(printer)?;
+    let c_name = std::ffi::CString::new(name.as_str())?;
+    let mut jobs = std::ptr::null_mut();
+    // SAFETY: CUPS allocates count cups_job_t records for this live output
+    // pointer. The queue name is NUL terminated and remains alive for the call.
+    let count = unsafe { cupsGetJobs2(std::ptr::null_mut(), &mut jobs, c_name.as_ptr(), 1, 0) };
+    ensure!(count >= 0, "Could not inspect pending macOS print jobs");
+    let stopped = if count > 0 {
+        ensure!(!jobs.is_null(), "CUPS returned an invalid print job list");
+        // SAFETY: the public CUPS API returned count initialized records. Only
+        // scalar fields are copied; no C-owned pointer escapes the allocation.
+        unsafe { std::slice::from_raw_parts(jobs, count as usize) }
+            .iter()
+            .filter(|j| j.state == 6)
+            .map(|j| j.id)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    // SAFETY: exactly the allocation/count returned by cupsGetJobs2 is freed
+    // once, after copying all IDs. CUPS explicitly accepts a zero/null list.
+    unsafe { cupsFreeJobs(count, jobs) };
+    for id in &stopped {
+        checked(
+            Command::new("/usr/bin/lp")
+                .args(["-i", &format!("{name}-{id}"), "-H", "restart"])
+                .output()?,
+        )?;
+    }
+    Ok(stopped.len())
+}
+/// Requeue only this account's stopped jobs on its enabled, installed queues.
+/// Intentionally held jobs (IPP state 4) are left held.
+pub fn retry_queues(printers: &[Printer]) -> Result<usize> {
+    let mut count = 0;
+    for printer in printers.iter().filter(|p| p.installed && p.enabled) {
+        count += retry_stopped(printer)?;
+    }
+    Ok(count)
+}

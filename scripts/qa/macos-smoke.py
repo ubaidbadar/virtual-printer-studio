@@ -79,9 +79,7 @@ try:
     passed('stopped receiver retains the unacknowledged CUPS job')
     service=subprocess.Popen([str(app),'--serve','--state',str(state)],stdout=log,stderr=log)
     wait_until(lambda:pathlib.Path(endpoint).exists(),'restarted receiver')
-    # Expedite CUPS's retry delay without altering the document.
-    run('/usr/bin/lp','-i',run('/usr/bin/lpstat','-W','not-completed','-o',queue).split()[0],'-H','resume')
-    run(app,'--macos-printer-action','resume','--state',state,'--printer',id)
+    # App startup itself restarts stopped jobs; the harness does not requeue them.
     wait_until(lambda:len(list(output.glob('*.pdf')))>=4,'offline queued job recovery',timeout=180)
     wait_until(lambda:len(json.loads(state.read_text())['activity'])>=4,'recovered activity update')
     passed('receiver restart recovers the queued document')
@@ -99,5 +97,8 @@ finally:
         (evidence/'cleanup.txt').write_text(result.stdout+result.stderr)
     (evidence/'completed-checks.json').write_text(json.dumps(checks,indent=2))
     subprocess.run(['/usr/bin/lpstat','-t'],stdout=(evidence/'cups-state.txt').open('w'),stderr=subprocess.STDOUT)
+    # These are exclusively synthetic acceptance fixtures.
+    for fixture in output.iterdir():
+        if fixture.suffix in ('.pdf','.png'):shutil.copy2(fixture,evidence/fixture.name)
     # Keep failures diagnosable without exporting account data or real print jobs.
     shutil.rmtree(work,ignore_errors=True)
