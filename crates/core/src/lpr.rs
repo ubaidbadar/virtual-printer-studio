@@ -601,18 +601,18 @@ mod tests {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 pub type UnixAuthorize = Arc<dyn Fn(&std::os::unix::net::UnixStream) -> Result<()> + Send + Sync>;
 
 /// macOS CUPS filters use a local Unix socket with kernel peer credentials.
 /// The same durable byte-counted receiver is shared with Windows.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 pub struct UnixCaptureServer {
     path: PathBuf,
     stop: Arc<AtomicBool>,
     join: Option<thread::JoinHandle<()>>,
 }
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl UnixCaptureServer {
     pub fn start(
         path: PathBuf,
@@ -652,7 +652,8 @@ impl UnixCaptureServer {
                     stream.set_read_timeout(Some(Duration::from_secs(120)))?;
                     stream.set_write_timeout(Some(Duration::from_secs(120)))?;
                     authorize(&stream)?;
-                    receive(stream, &root, &profiles, &Arc::new(|_| Ok(None)))
+                    let title_resolver: TitleResolver = Arc::new(|_| Ok(None));
+                    receive(stream, &root, &profiles, &title_resolver)
                 })();
                 match result {
                     Ok(Some(job)) => event(Ok(job)),
@@ -668,7 +669,7 @@ impl UnixCaptureServer {
         })
     }
 }
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl Drop for UnixCaptureServer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
