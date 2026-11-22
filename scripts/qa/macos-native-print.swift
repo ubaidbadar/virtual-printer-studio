@@ -27,7 +27,7 @@ if mode=="verify" {
         try view.dataWithPDF(inside:view.bounds).write(to:URL(fileURLWithPath:args[2]))
     } else {
         let info=NSPrintInfo()
-        guard let printer=NSPrinter(name:args[2]) else {fatalError("Native printer not found")}
+        guard let printer=NSPrinter(name:args[2]) else {fatalError("Native printer not found; available names: \(NSPrinter.printerNames)")}
         info.printer=printer
         info.paperSize=NSSize(width:227,height:425)
         info.topMargin=0;info.bottomMargin=0;info.leftMargin=0;info.rightMargin=0

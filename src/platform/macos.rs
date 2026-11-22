@@ -103,6 +103,17 @@ pub fn native_action(action: &str, printer: &Printer, _port: u16, data: &Path) -
         .args(["-W", "not-completed", "-o", &name])
         .output()?;
     if action == "remove" {
+        let existing = Command::new("/usr/bin/lpstat")
+            .env("LC_ALL", "C")
+            .args(["-p", &name])
+            .output()?;
+        if !existing.status.success() {
+            let error = String::from_utf8_lossy(&existing.stderr).to_lowercase();
+            if error.contains("unknown destination") || error.contains("does not exist") {
+                return Ok(());
+            }
+            checked(existing)?;
+        }
         ensure!(
             jobs.stdout.is_empty(),
             "This printer still has queued jobs. Resume or cancel them before deleting it."
@@ -156,7 +167,7 @@ pub fn native_action(action: &str, printer: &Printer, _port: u16, data: &Path) -
     // All executable/configuration destinations are root owned. The CUPS filter
     // has no permission to modify them or write to the user's output folder.
     administrator(&format!(
-        "set -eu\n/usr/bin/install -d -o root -g wheel -m 755 /Library/Printers/VirtualPrinterStudio\n/usr/bin/install -d -o root -g _lp -m 750 {config_root}\n/usr/bin/install -o root -g wheel -m 755 {helper} {filter}\n/usr/bin/install -o root -g _lp -m 640 {config} {config_root}/{name}.json\n/usr/sbin/lpadmin -p {name_q} -D {display} -v file:///dev/null -P {ppd} -o printer-is-shared=false -o printer-error-policy=retry-job -u {allow} -E\n{paused} {name_q}",
+        "set -eu\n/usr/bin/install -d -o root -g wheel -m 755 /Library/Printers/VirtualPrinterStudio\n/usr/bin/install -d -o root -g _lp -m 750 {config_root}\n/usr/bin/install -S -o root -g wheel -m 755 {helper} {filter}\n/usr/bin/install -S -o root -g _lp -m 640 {config} {config_root}/{name}.json\n/usr/sbin/lpadmin -p {name_q} -D {display} -v file:///dev/null -P {ppd} -o printer-is-shared=false -o printer-error-policy=retry-job -u {allow} -E\n{paused} {name_q}",
         config_root = shell(CONFIG),
         helper = shell(&helper.to_string_lossy()),
         filter = shell(FILTER),
@@ -350,15 +361,17 @@ pub fn printer_cli(args: &[String]) -> Result<()> {
         .find(|p| p.id == value("--printer").unwrap_or(""))
         .context("Printer not found")?;
     match action {
-        "test" => print_test(p)?,
+        "test" => return print_test(p),
         "pause" | "resume" => {
             p.enabled = action == "resume";
-            native_action(
+            // This CLI controls only the native queue during acceptance tests;
+            // the running delivery worker remains the sole state writer.
+            return native_action(
                 "pause",
                 p,
                 0,
                 path.parent().context("Missing state folder")?,
-            )?;
+            );
         }
         "ensure" | "remove" => {
             native_action(action, p, 0, path.parent().context("Missing state folder")?)?;

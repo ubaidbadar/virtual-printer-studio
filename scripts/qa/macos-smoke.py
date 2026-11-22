@@ -53,7 +53,7 @@ try:
     run('/usr/bin/swift',root/'scripts/qa/macos-native-print.swift','verify',pdf,'Virtual Printer Studio')
     passed('CUPS PDF filter to authenticated capture to valid saved PDF')
     token='AppleSiliconNativeReceipt'+uuid.uuid4().hex[:8]
-    run('/usr/bin/swift',root/'scripts/qa/macos-native-print.swift','print',queue,token)
+    run('/usr/bin/swift',root/'scripts/qa/macos-native-print.swift','print','VPS Apple Silicon QA',token)
     wait_until(lambda:len(list(output.glob('*.pdf')))>=2,'native AppKit document')
     native=[p for p in output.glob('*.pdf') if p!=pdf][0]
     geometry=run('/usr/bin/swift',root/'scripts/qa/macos-native-print.swift','verify',native,token,'227','425')
