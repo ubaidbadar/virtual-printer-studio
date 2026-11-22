@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 package=target/macos-package
 bundle="$package/Virtual Printer Studio.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Helpers" "$bundle/Contents/Resources"
-cp target/release/virtual-printer-studio "$bundle/Contents/MacOS/"
-cp target/release/virtual-printer-studio "$bundle/Contents/Helpers/vps-cups-filter"
+cp "target/${VPS_BUILD_PROFILE:-release}/virtual-printer-studio" "$bundle/Contents/MacOS/"
+cp "target/${VPS_BUILD_PROFILE:-release}/virtual-printer-studio" "$bundle/Contents/Helpers/vps-cups-filter"
 python3 - "$bundle" <<'PY'
 import plistlib,sys,pathlib
 bundle=pathlib.Path(sys.argv[1])
@@ -34,6 +34,7 @@ codesign --verify --deep --strict --verbose=2 "$bundle"
 lipo "$bundle/Contents/MacOS/virtual-printer-studio" -verify_arch arm64
 file "$bundle/Contents/MacOS/virtual-printer-studio"
 otool -L "$bundle/Contents/MacOS/virtual-printer-studio"
+if [ "${VPS_BUNDLE_ONLY:-0}" = 1 ]; then exit 0; fi
 cp docs/macos.md "$package/Read me.txt"
 ln -s /Applications "$package/Applications" 2>/dev/null || true
 ditto -c -k --sequesterRsrc --keepParent "$bundle" target/VirtualPrinterStudio-AppleSilicon.zip

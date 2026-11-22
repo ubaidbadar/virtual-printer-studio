@@ -10,7 +10,7 @@ Create a printer and select its output folder. macOS asks for administrator perm
 
 ## macOS printing architecture
 
-The queue uses macOS's built-in PDF print pipeline and a small filter entry point from the bundled executable. Administrator setup installs a root-owned copy under `/Library/Printers/VirtualPrinterStudio`, plus a queue configuration readable only by root and the `_lp` printing account. Queues are not shared and accept jobs only from the configuring macOS account.
+The queue uses macOS's built-in PDF print pipeline and a small filter entry point from the bundled executable. Administrator setup installs a root-owned copy under `/Library/Printers/VirtualPrinterStudio`, plus a queue configuration readable only by root and the `_lp` printing account. Queues are not shared and accept jobs from the configuring macOS account and root (for authorized printer administration).
 
 The filter and application communicate through a Unix socket under an owner-controlled directory in `/private/tmp`. Both sides check the kernel's peer UID before sending documents. Root and `_lp` are the only capture submitters. A second account cannot impersonate the receiver. No listener is exposed to the network, no printer process writes to the chosen output folder, and no CUPS security setting is weakened.
 

@@ -34,6 +34,12 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo test --workspace --locked
       - run: cargo clippy --workspace --locked --all-targets -- -D warnings
+      - name: Build native development app for early CUPS checks
+        run: cargo build --workspace --locked
+      - name: Prepare development test bundle
+        run: VPS_BUILD_PROFILE=debug VPS_BUNDLE_ONLY=1 bash scripts/package-macos.sh
+      - name: Check CUPS behavior before the optimized build
+        run: python3 scripts/qa/macos-smoke.py
       - run: cargo build --workspace --release --locked
       - name: Package native Apple Silicon application
         run: bash scripts/package-macos.sh

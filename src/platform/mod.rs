@@ -89,3 +89,8 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 pub const NATIVE_AVAILABLE: bool = cfg!(any(windows, target_os = "macos"));
+
+#[cfg(target_os = "macos")]
+pub const CAPTURE_BACKEND: &str = "macOS CUPS PDF (authenticated Unix socket)";
+#[cfg(not(target_os = "macos"))]
+pub const CAPTURE_BACKEND: &str = vps_core::CAPTURE_BACKEND;

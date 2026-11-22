@@ -163,7 +163,7 @@ pub fn native_action(action: &str, printer: &Printer, _port: u16, data: &Path) -
         config = shell(&config.to_string_lossy()),
         display = shell(&printer.name),
         ppd = shell(&ppd.to_string_lossy()),
-        allow = shell(&format!("allow:{user}"))
+        allow = shell(&format!("allow:{user},root"))
     ))
 }
 fn ack(stream: &mut UnixStream) -> Result<()> {

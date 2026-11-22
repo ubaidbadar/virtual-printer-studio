@@ -656,7 +656,7 @@ fn run() -> anyhow::Result<()> {
     {
         let weak = ui.as_weak();
         let data = data.clone();
-        ui.on_copy_diagnostics(move||{if let Some(ui)=weak.upgrade(){ui.set_diagnostics(format!("Virtual Printer Studio {}\nOS: {} {}\nState: {}\nCapture: {}\nPrinters: {}\nPending: {}\nMonitor: {}\nLog folder: {}",env!("CARGO_PKG_VERSION"),std::env::consts::OS,std::env::consts::ARCH,data.join("state.json").display(),platform::spool_root(&data).display(),ui.get_printer_count(),ui.get_queued_count(),CAPTURE_BACKEND,data.join("logs").display()).into());ui.set_message("Diagnostics copied.".into());}});
+        ui.on_copy_diagnostics(move||{if let Some(ui)=weak.upgrade(){ui.set_diagnostics(format!("Virtual Printer Studio {}\nOS: {} {}\nState: {}\nCapture: {}\nPrinters: {}\nPending: {}\nMonitor: {}\nLog folder: {}",env!("CARGO_PKG_VERSION"),std::env::consts::OS,std::env::consts::ARCH,data.join("state.json").display(),platform::spool_root(&data).display(),ui.get_printer_count(),ui.get_queued_count(),platform::CAPTURE_BACKEND,data.join("logs").display()).into());ui.set_message("Diagnostics copied.".into());}});
     }
     {
         let weak = ui.as_weak();
