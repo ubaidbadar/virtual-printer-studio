@@ -783,7 +783,7 @@ fn start_capture(
     #[cfg(not(target_os = "macos"))]
     {
         let server = vps_core::lpr::CaptureServer::start_with_title_resolver(
-            std::net::SocketAddr::from(([127, 0, 0, 1], state.capture_port, &data)),
+            std::net::SocketAddr::from(([127, 0, 0, 1], state.capture_port)),
             root,
             routes,
             Arc::new(platform::authorize_capture),

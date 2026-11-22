@@ -2,7 +2,6 @@
 //! changing CUPS configuration; PDF delivery always runs as the signed-in user.
 use super::*;
 use anyhow::{Context, ensure};
-use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::{Read, Write},
@@ -36,46 +35,6 @@ fn peer_uid(stream: &UnixStream) -> Result<u32> {
         "Could not authenticate the local print connection"
     );
     Ok(user)
-}
-fn lp_uid() -> Result<u32> {
-    let output = Command::new("/usr/bin/id").args(["-u", "_lp"]).output()?;
-    ensure!(
-        output.status.success(),
-        "The macOS print service account is unavailable"
-    );
-    Ok(String::from_utf8(output.stdout)?.trim().parse()?)
-}
-pub fn authorize_unix(stream: &UnixStream) -> Result<()> {
-    let peer = peer_uid(stream)?;
-    ensure!(
-        peer == 0 || peer == lp_uid()?,
-        "Only the macOS print service may submit captured PDFs"
-    );
-    Ok(())
-}
-pub fn capture_socket(data: &Path) -> Result<PathBuf> {
-    let canonical = fs::canonicalize(data)?;
-    let hash = format!(
-        "{:x}",
-        Sha256::digest(canonical.as_os_str().as_encoded_bytes())
-    );
-    let dir = PathBuf::from(format!("/private/tmp/vps-{}-{}", uid(), &hash[..20]));
-    match fs::create_dir(&dir) {
-        Ok(()) => (),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
-        Err(e) => return Err(e.into()),
-    }
-    let meta = fs::symlink_metadata(&dir)?;
-    ensure!(
-        meta.is_dir() && !meta.file_type().is_symlink() && meta.uid() == uid(),
-        "The private print socket directory has an unexpected owner"
-    );
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o711))?;
-    Ok(dir.join("capture.sock"))
-}
-fn queue(printer: &Printer) -> Result<String> {
-    ensure!(vps_core::valid_id(&printer.id), "Invalid printer identity");
-    Ok(format!("VPS_{}", vps_core::lpr_queue(&printer.id)?))
 }
 fn shell(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
@@ -222,7 +181,7 @@ pub fn cups_filter() -> Result<()> {
     );
     let printer = std::env::var("PRINTER")?;
     ensure!(
-        printer.starts_with("VPS_") && vps_core::valid_id(&printer),
+        printer.strip_prefix("VPS_").is_some_and(vps_core::valid_id),
         "Invalid CUPS queue"
     );
     let config_path = Path::new(CONFIG).join(format!("{printer}.json"));
