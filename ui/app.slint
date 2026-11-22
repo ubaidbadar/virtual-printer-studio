@@ -61,6 +61,7 @@ export component AppWindow inherits Window {
     in-out property <bool> confirm-clear: false;
     in-out property <bool> welcome: true;
     in-out property <bool> busy: false;
+    in property <bool> macos;
     in-out property <bool> native-available;
     in-out property <bool> keep-tray: true;
     in-out property <bool> applied-keep-tray: true;
@@ -225,7 +226,7 @@ export component AppWindow inherits Window {
                 }
                 if root.page == 3: SettingsPage { y: Tokens.px75; height: parent.height - Tokens.px75;
                     startup <=> root.startup; tray <=> root.keep-tray; notifications <=> root.notifications; theme <=> root.theme; history <=> root.history-index; folder <=> root.default-folder;
-                    native-available: root.native-available; disabled: root.modal-open || root.busy;
+                    native-available: root.native-available; macos: root.macos; disabled: root.modal-open || root.busy;
                     save => { root.save-settings(); } browse => { root.browse(true); }
                     export => { root.export-backup(); } import => { root.import-backup(); }
                     diagnostics => { root.copy-diagnostics(); diagnostic-copy.select-all(); diagnostic-copy.copy(); }
@@ -234,7 +235,7 @@ export component AppWindow inherits Window {
             }
             if root.message != "" || root.busy: Rectangle { y: parent.height - Tokens.px56; height: Tokens.px56; background: Tokens.surface; border-width: Tokens.hairline; border-color: Tokens.border; border-radius: Tokens.radius;
                 HorizontalLayout { padding: Tokens.s3; spacing: Tokens.s3;
-                    Text { text: root.busy ? @tr("Working… check for a Windows administrator prompt.") : root.message; color: Tokens.text; font-size: Tokens.small; wrap: word-wrap; horizontal-stretch: 1; }
+                    Text { text: root.busy ? @tr("Working… check for an administrator prompt.") : root.message; color: Tokens.text; font-size: Tokens.small; wrap: word-wrap; horizontal-stretch: 1; }
                     StudioButton { text: @tr("Dismiss"); enabled: !root.busy; clicked => { root.message = ""; } }
                 }
             }
@@ -278,13 +279,13 @@ export component AppWindow inherits Window {
                     Text { text: @tr("Open after saving"); color: Tokens.text; font-size: Tokens.small; }
                     StudioToggle { checked <=> root.open-after; label: @tr("Open each PDF after saving"); }
                 }
-                Text { x: Tokens.px0; y: parent.height - Tokens.px36; width: parent.width - Tokens.px220; height: Tokens.px40; text: root.busy ? @tr("Working… check for an administrator prompt.") : root.message != "" ? root.message : @tr("Windows may ask for administrator permission\nonce."); color: root.message == "" ? Tokens.secondary : Tokens.danger-fg; font-size: Tokens.caption; wrap: word-wrap; }
+                Text { x: Tokens.px0; y: parent.height - Tokens.px36; width: parent.width - Tokens.px220; height: Tokens.px40; text: root.busy ? @tr("Working… check for an administrator prompt.") : root.message != "" ? root.message : @tr("The system may ask for administrator permission\nonce."); color: root.message == "" ? Tokens.secondary : Tokens.danger-fg; font-size: Tokens.caption; wrap: word-wrap; }
                 StudioButton { x: parent.width - Tokens.px210; y: parent.height - Tokens.control-height; width: Tokens.px78; text: @tr("Cancel"); enabled: !root.busy; clicked => { root.editor = false; } }
                 StudioButton { x: parent.width - Tokens.px124; y: parent.height - Tokens.control-height; width: Tokens.px124; text: @tr("Create printer"); label: @tr("Save printer"); primary: true; enabled: !root.busy; clicked => { root.save-profile(); } }
             }
             if root.confirm-delete || root.confirm-clear: VerticalLayout { padding: Tokens.s7; spacing: Tokens.s4;
                 Text { text: root.confirm-delete ? @tr("Delete this printer?") : @tr("Clear activity history?"); color: Tokens.text; font-size: Tokens.dialog-title; font-weight: Tokens.font-semibold; }
-                Text { text: root.confirm-delete ? @tr("The Windows printer and its profile will be removed. Saved PDFs and activity will be kept. Deliver or cancel pending print jobs first.") : @tr("Saved PDFs and pending captured documents will be kept."); color: Tokens.secondary; font-size: Tokens.body; wrap: word-wrap; }
+                Text { text: root.confirm-delete ? @tr("The system printer and its profile will be removed. Saved PDFs and activity will be kept. Deliver or cancel pending print jobs first.") : @tr("Saved PDFs and pending captured documents will be kept."); color: Tokens.secondary; font-size: Tokens.body; wrap: word-wrap; }
                 Text { text: root.message; color: Tokens.danger-fg; font-size: Tokens.small; wrap: word-wrap; }
                 HorizontalLayout { alignment: end; spacing: Tokens.s2;
                     StudioButton { text: @tr("Cancel"); enabled: !root.busy; clicked => { root.confirm-delete = false; root.confirm-clear = false; } }

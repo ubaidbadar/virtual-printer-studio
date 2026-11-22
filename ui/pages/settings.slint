@@ -8,6 +8,7 @@ export component SettingsPage inherits ScrollView {
     in-out property <int> theme: 2;
     in-out property <int> history: 1;
     in-out property <string> folder;
+    in property <bool> macos;
     in property <bool> native-available;
     in property <bool> disabled;
     callback save(); callback browse(); callback export(); callback import(); callback diagnostics(); callback logs(); callback open(string);
@@ -19,13 +20,13 @@ export component SettingsPage inherits ScrollView {
         VerticalLayout { spacing: Tokens.s2;
             SectionTitle { text: @tr("Startup"); }
             SettingsCard { height: Tokens.px172; VerticalLayout { spacing: Tokens.px0;
-                SettingRow { title: @tr("Start with Windows"); description: @tr("So your printers are ready when you are");
-                    StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Start with Windows"); checked <=> root.startup; enabled: !root.disabled && root.native-available; toggled => { root.save(); } }
+                SettingRow { title: root.macos ? @tr("Start at login") : @tr("Start with Windows"); description: @tr("So your printers are ready when you are");
+                    StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: root.macos ? @tr("Start at login") : @tr("Start with Windows"); checked <=> root.startup; enabled: !root.disabled && root.native-available; toggled => { root.save(); } }
                 }
-                SettingRow { title: @tr("Keep running in the tray"); description: @tr("Closing the window doesn't stop saving");
+                SettingRow { title: root.macos ? @tr("Keep running in the menu bar") : @tr("Keep running in the tray"); description: @tr("Closing the window doesn't stop saving");
                     StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Keep running in the tray"); checked <=> root.tray; enabled: !root.disabled && root.native-available; toggled => { root.save(); } }
                 }
-                SettingRow { title: @tr("Show a notification when a PDF is saved"); description: @tr("Includes Open and Show folder buttons"); last: true;
+                SettingRow { title: @tr("Show a notification when a PDF is saved"); description: root.macos ? @tr("Show saved documents in Notification Centre") : @tr("Includes Open and Show folder buttons"); last: true;
                     StudioToggle { x: parent.width - Tokens.px56; y: Tokens.s3; label: @tr("Show saved PDF notifications"); checked <=> root.notifications; enabled: !root.disabled && root.native-available; toggled => { root.save(); } }
                 }
             } }
@@ -33,7 +34,7 @@ export component SettingsPage inherits ScrollView {
         VerticalLayout { spacing: Tokens.s2;
             SectionTitle { text: @tr("Appearance"); }
             SettingsCard { height: Tokens.px115; VerticalLayout { spacing: Tokens.px0;
-                SettingRow { title: @tr("Theme"); description: @tr("Match Windows or choose one");
+                SettingRow { title: @tr("Theme"); description: root.macos ? @tr("Match macOS or choose one") : @tr("Match Windows or choose one");
                     StudioSelect { x: parent.width - Tokens.px186; y: Tokens.s3; width: Tokens.px170; height: Tokens.control-height; model: [@tr("Light"), @tr("Dark"), @tr("Use system setting")]; current-index <=> root.theme; enabled: !root.disabled; selected => { root.save(); } }
                 }
                 SettingRow { title: @tr("Language"); description: @tr("Restart not needed"); last: true;

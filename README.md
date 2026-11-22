@@ -1,8 +1,14 @@
 # Virtual Printer Studio
 
-A Rust / Slint desktop app for Windows 10/11. Create named virtual printers, print from other applications, and automatically save each document as a PDF in its configured folder.
+A Rust / Slint desktop app for Windows 10/11 and Apple Silicon macOS. Create named virtual printers, print from other applications, and automatically save each document as a PDF in its configured folder.
 
 Version 0.2 uses **Microsoft Print to PDF** with Windows' built-in **Standard TCP/IP port monitor in LPR mode**. All capture traffic stays on `127.0.0.1`. No custom driver, port-monitor DLL, Ghostscript, or third-party rendering service is installed.
+
+## Install on Apple Silicon macOS
+
+Download `VirtualPrinterStudio-AppleSilicon` from a successful [Apple Silicon macOS workflow](https://github.com/ubaidbadar/virtual-printer-studio/actions/workflows/macos.yml). Open the DMG and drag the app to Applications, or extract the ZIP. The app is native arm64, with a macOS 12 deployment target; macOS 15 is used for validation. See [Mac installation, permissions and signing status](docs/macos.md).
+
+macOS uses its own CUPS PDF pipeline, a root-owned filter and authenticated local Unix socket. It does not use the Windows driver. Mac packages have an ad hoc signature and are not Developer ID signed or notarized.
 
 ## Install and use on Windows
 

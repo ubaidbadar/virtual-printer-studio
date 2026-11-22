@@ -1,0 +1,56 @@
+*PPD-Adobe: "4.3"
+*FormatVersion: "4.3"
+*FileVersion: "1.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "VPSPDF.PPD"
+*Manufacturer: "Virtual Printer Studio"
+*Product: "(Virtual Printer Studio PDF)"
+*ModelName: "Virtual Printer Studio PDF"
+*NickName: "Virtual Printer Studio PDF"
+*ShortNickName: "VPS PDF"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: True
+*DefaultColorSpace: RGB
+*FileSystem: False
+*Throughput: "1"
+*cupsVersion: 2.0
+*cupsManualCopies: True
+*cupsFilter2: "application/vnd.cups-pdf application/pdf 0 /Library/Printers/VirtualPrinterStudio/vps-cups-filter"
+*OpenUI *PageSize/Paper Size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: A4
+*PageSize A4/A4: "<</PageSize[595 842]>>setpagedevice"
+*PageSize Letter/US Letter: "<</PageSize[612 792]>>setpagedevice"
+*PageSize Legal/US Legal: "<</PageSize[612 1008]>>setpagedevice"
+*PageSize Receipt80/80 mm Receipt: "<</PageSize[227 425]>>setpagedevice"
+*CloseUI: *PageSize
+*OpenUI *PageRegion: PickOne
+*OrderDependency: 10 AnySetup *PageRegion
+*DefaultPageRegion: A4
+*PageRegion A4/A4: "<</PageSize[595 842]>>setpagedevice"
+*PageRegion Letter/US Letter: "<</PageSize[612 792]>>setpagedevice"
+*PageRegion Legal/US Legal: "<</PageSize[612 1008]>>setpagedevice"
+*PageRegion Receipt80/80 mm Receipt: "<</PageSize[227 425]>>setpagedevice"
+*CloseUI: *PageRegion
+*DefaultImageableArea: A4
+*ImageableArea A4: "0 0 595 842"
+*ImageableArea Letter: "0 0 612 792"
+*ImageableArea Legal: "0 0 612 1008"
+*ImageableArea Receipt80: "0 0 227 425"
+*DefaultPaperDimension: A4
+*PaperDimension A4: "595 842"
+*PaperDimension Letter: "612 792"
+*PaperDimension Legal: "612 1008"
+*PaperDimension Receipt80: "227 425"
+*VariablePaperSize: True
+*MaxMediaWidth: "14400"
+*MaxMediaHeight: "14400"
+*HWMargins: 0 0 0 0
+*CustomPageSize True: "pop pop pop <</PageSize[5 -2 roll] /ImagingBBox null>>setpagedevice"
+*ParamCustomPageSize Width: 1 points 36 14400
+*ParamCustomPageSize Height: 2 points 36 14400
+*ParamCustomPageSize WidthOffset: 3 points 0 0
+*ParamCustomPageSize HeightOffset: 4 points 0 0
+*ParamCustomPageSize Orientation: 5 int 0 3

@@ -11,7 +11,7 @@ use std::{
 pub fn snapshots(output: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(output)?;
     let ui = AppWindow::new()?;
-    if !cfg!(windows) {
+    if cfg!(target_os = "linux") {
         ui.global::<Tokens>()
             .set_font_family("Liberation Sans".into());
     }

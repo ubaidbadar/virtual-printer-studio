@@ -95,7 +95,11 @@ impl CaptureServer {
                         title_resolver.clone(),
                     );
                     thread::spawn(move || {
-                        let result = receive(stream, &root, &profiles, &title_resolver);
+                        let result = (|| {
+                            stream.set_read_timeout(Some(Duration::from_secs(120)))?;
+                            stream.set_write_timeout(Some(Duration::from_secs(120)))?;
+                            receive(stream, &root, &profiles, &title_resolver)
+                        })();
                         if let Err(e) = &result {
                             event(Err(anyhow::anyhow!("{e:#}")));
                         } else if let Ok(Some(job)) = result {
@@ -124,7 +128,7 @@ impl Drop for CaptureServer {
         }
     }
 }
-fn line(reader: &mut BufReader<TcpStream>) -> Result<Vec<u8>> {
+fn line<S: Read>(reader: &mut BufReader<S>) -> Result<Vec<u8>> {
     let mut line = Vec::new();
     let count = reader.by_ref().take(4097).read_until(b'\n', &mut line)?;
     ensure!(
@@ -134,19 +138,17 @@ fn line(reader: &mut BufReader<TcpStream>) -> Result<Vec<u8>> {
     line.pop();
     Ok(line)
 }
-fn ack(reader: &mut BufReader<TcpStream>) -> Result<()> {
+fn ack<S: Write>(reader: &mut BufReader<S>) -> Result<()> {
     reader.get_mut().write_all(&[0])?;
     reader.get_mut().flush()?;
     Ok(())
 }
-fn receive(
-    stream: TcpStream,
+fn receive<S: Read + Write>(
+    stream: S,
     root: &Path,
     profiles: &RwLock<HashMap<String, String>>,
     title_resolver: &TitleResolver,
 ) -> Result<Option<JobMetadata>> {
-    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(120)))?;
     let mut reader = BufReader::new(stream);
     let first = line(&mut reader)?;
     ensure!(!first.is_empty(), "Empty LPR request");
@@ -596,5 +598,84 @@ mod tests {
             )
             .is_err()
         );
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub type UnixAuthorize = Arc<dyn Fn(&std::os::unix::net::UnixStream) -> Result<()> + Send + Sync>;
+
+/// macOS CUPS filters use a local Unix socket with kernel peer credentials.
+/// The same durable byte-counted receiver is shared with Windows.
+#[cfg(target_os = "macos")]
+pub struct UnixCaptureServer {
+    path: PathBuf,
+    stop: Arc<AtomicBool>,
+    join: Option<thread::JoinHandle<()>>,
+}
+#[cfg(target_os = "macos")]
+impl UnixCaptureServer {
+    pub fn start(
+        path: PathBuf,
+        root: PathBuf,
+        profiles: Arc<RwLock<HashMap<String, String>>>,
+        authorize: UnixAuthorize,
+        event: Event,
+    ) -> Result<Self> {
+        use std::os::unix::{
+            fs::{FileTypeExt, PermissionsExt},
+            net::{UnixListener, UnixStream},
+        };
+        if let Ok(meta) = fs::symlink_metadata(&path) {
+            ensure!(
+                meta.file_type().is_socket(),
+                "Capture socket path is occupied by another file"
+            );
+            ensure!(
+                UnixStream::connect(&path).is_err(),
+                "The PDF receiver is already running"
+            );
+            fs::remove_file(&path)?;
+        }
+        let listener = UnixListener::bind(&path)?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o666))?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let child_stop = stop.clone();
+        let join = thread::spawn(move || {
+            // Serialize CUPS transfers to bound memory/thread use. CUPS retains
+            // jobs until the durable receive ACK has been sent.
+            for stream in listener.incoming() {
+                if child_stop.load(Ordering::Acquire) {
+                    break;
+                }
+                let result = (|| {
+                    let stream = stream?;
+                    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
+                    stream.set_write_timeout(Some(Duration::from_secs(120)))?;
+                    authorize(&stream)?;
+                    receive(stream, &root, &profiles, &Arc::new(|_| Ok(None)))
+                })();
+                match result {
+                    Ok(Some(job)) => event(Ok(job)),
+                    Ok(None) => (),
+                    Err(error) => event(Err(error)),
+                }
+            }
+        });
+        Ok(Self {
+            path,
+            stop,
+            join: Some(join),
+        })
+    }
+}
+#[cfg(target_os = "macos")]
+impl Drop for UnixCaptureServer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = std::os::unix::net::UnixStream::connect(&self.path);
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+        let _ = fs::remove_file(&self.path);
     }
 }

@@ -43,3 +43,8 @@ features = ["system-tray", "accessibility", "unstable-winit-030"]
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1.34"
+
+[target.'cfg(target_os = "macos")'.dependencies.slint]
+version = "1.18.1"
+default-features = false
+features = ["system-tray", "accessibility"]

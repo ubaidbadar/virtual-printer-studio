@@ -11,32 +11,32 @@ pub struct PrinterHealth {
 mod windows;
 #[cfg(windows)]
 pub use windows::*;
-#[cfg(not(windows))]
-pub fn native_action(_action: &str, _printer: &Printer, _port: u16) -> Result<()> {
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn native_action(_action: &str, _printer: &Printer, _port: u16, _data: &Path) -> Result<()> {
     anyhow::bail!(
         "Windows printer installation is available on Windows 10/11. Profiles and PDF delivery can be used here."
     )
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn print_test(_printer: &Printer) -> Result<()> {
     anyhow::bail!("Windows is required for a system print test.")
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn startup(_enabled: bool) -> Result<()> {
     anyhow::bail!("Start with Windows is available on Windows.")
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn system_dark() -> bool {
     false
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn notify_saved(_path: &Path, _printer: &str) -> Result<()> {
     Ok(())
 }
 pub fn spool_root(data: &Path) -> PathBuf {
     data.join("capture")
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn authorize_capture(_stream: &std::net::TcpStream) -> Result<()> {
     anyhow::bail!("Windows spooler authentication is unavailable on this platform")
 }
@@ -47,7 +47,14 @@ pub fn show_in_folder(path: &Path) -> Result<()> {
             .arg(format!("/select,{}", path.display()))
             .spawn()?;
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/open")
+            .arg("-R")
+            .arg(path)
+            .spawn()?;
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         open::that(path.parent().unwrap_or(path))?;
     }
@@ -72,7 +79,13 @@ pub fn log(path: &Path, message: &str) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn capture_title(_id: &str) -> Result<Option<String>> {
     Ok(None)
 }
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::*;
+pub const NATIVE_AVAILABLE: bool = cfg!(any(windows, target_os = "macos"));

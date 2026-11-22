@@ -45,7 +45,7 @@ fn prepare_installer(path: &Path, script: &str) -> Result<std::fs::File> {
     );
     Ok(locked)
 }
-pub fn native_action(action: &str, printer: &Printer, port: u16) -> Result<()> {
+pub fn native_action(action: &str, printer: &Printer, port: u16, _data: &Path) -> Result<()> {
     ensure!(
         ["ensure", "pause", "remove"].contains(&action),
         "Unknown Windows printer action"

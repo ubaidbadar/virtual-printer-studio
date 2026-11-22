@@ -121,8 +121,8 @@ impl Service {
                             editor_health=Some(platform::PrinterHealth::default());
                             validate(&state,&id,&printer.name,&printer.folder,&printer.pattern)?;
                             if let Some(health)=editor_health.as_mut(){health.write=true;}
-                            #[cfg(windows)] if printer.installed { editor_health=Some(platform::health(&printer)?);return Ok("Printer health checked.".into()); }
-                            Ok(if cfg!(windows){"Output folder is writable. Select Install or repair to connect this printer."}else{"Output folder is writable. System printing is available on Windows."}.into())
+                            #[cfg(any(windows,target_os="macos"))] if printer.installed { editor_health=Some(platform::health(&printer)?);return Ok("Printer health checked.".into()); }
+                            Ok(if platform::NATIVE_AVAILABLE{"Output folder is writable. Select Install or repair to connect this printer."}else{"Output folder is writable. System printing is unavailable on this platform."}.into())
                         },
                         Command::Welcome=>{let mut next=state.clone();next.welcomed=true;commit(&mut state,&path,next)?;Ok(String::new())},
                         Command::SaveProfile{id,name,folder,pattern,monthly,open_after,start_enabled}=>{
@@ -138,15 +138,15 @@ impl Service {
                             // Commit the identity before provisioning: a cancelled UAC prompt
                             // or failed final commit cannot leave an unmanageable orphan queue.
                             commit(&mut state,&path,next)?;
-                            if cfg!(windows) && native_change {
+                            if platform::NATIVE_AVAILABLE && native_change {
                                 if capture.is_none(){edit=Some(printer.clone());anyhow::bail!("The PDF receiver is offline. Select Retry pending, then Install or repair this printer.");}
-                                match platform::native_action("ensure",&printer,state.capture_port){
+                                match platform::native_action("ensure",&printer,state.capture_port,&data){
                                     Ok(())=>{let p=find_mut(&mut state,&printer.id)?;p.installed=true;p.last_error.clear();save(&path,&state)?;},
                                     Err(e)=>{find_mut(&mut state,&printer.id)?.last_error=e.to_string();save(&path,&state)?;edit=Some(find(&state,&printer.id)?.clone());return Err(e);}
                                 }
                             }
                             failures.clear();close=true;
-                            Ok(if cfg!(windows){"Printer saved and ready in Windows Print dialogs.".into()}else{"Profile saved. Windows printer installation is available on Windows.".into()})
+                            Ok(if platform::NATIVE_AVAILABLE{"Printer saved and ready in system Print dialogs.".into()}else{"Profile saved. Windows printer installation is available on Windows.".into()})
                         }
                         Command::Relocate{id,folder}=>{
                             let p=find(&state,&id)?;
@@ -158,32 +158,32 @@ impl Service {
                         }
                         Command::Repair(id)=>{
                             let p=find(&state,&id)?.clone();
-                            match platform::native_action("ensure",&p,state.capture_port){Ok(())=>{let p=find_mut(&mut state,&id)?;p.installed=true;p.last_error.clear();save(&path,&state)?;failures.clear();Ok("Windows printer repaired. Pending PDFs will be retried.".into())},Err(e)=>{find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;Err(e)}}
+                            match platform::native_action("ensure",&p,state.capture_port,&data){Ok(())=>{let p=find_mut(&mut state,&id)?;p.installed=true;p.last_error.clear();save(&path,&state)?;failures.clear();Ok("System printer repaired. Pending PDFs will be retried.".into())},Err(e)=>{find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;Err(e)}}
                         }
                         Command::Toggle(id,enabled)=>{
                             let mut next=state.clone();find_mut(&mut next,&id)?.enabled=enabled;commit(&mut state,&path,next)?;
                             let p=find(&state,&id)?.clone();
-                            if cfg!(windows) && p.installed&& let Err(e)=platform::native_action("pause",&p,state.capture_port){find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;return Err(e);}
+                            if platform::NATIVE_AVAILABLE && p.installed&& let Err(e)=platform::native_action("pause",&p,state.capture_port,&data){find_mut(&mut state,&id)?.last_error=e.to_string();save(&path,&state)?;return Err(e);}
                             failures.clear();Ok(if enabled{"Printer resumed."}else{"Printer paused. Queued documents are retained."}.into())
                         }
                         Command::SetAll(enabled)=>{
                             let mut next=state.clone();for p in &mut next.printers{p.enabled=enabled;}commit(&mut state,&path,next)?;
                             let mut failed=false;
                             for p in state.printers.clone(){
-                                if cfg!(windows) && p.installed && let Err(error)=platform::native_action("pause",&p,state.capture_port){find_mut(&mut state,&p.id)?.last_error=error.to_string();failed=true;}
+                                if platform::NATIVE_AVAILABLE && p.installed && let Err(error)=platform::native_action("pause",&p,state.capture_port,&data){find_mut(&mut state,&p.id)?.last_error=error.to_string();failed=true;}
                             }
                             save(&path,&state)?;failures.clear();
-                            ensure!(!failed,"Some Windows queues need attention. Open Printers to repair them.");
+                            ensure!(!failed,"Some print queues need attention. Open Printers to repair them.");
                             Ok(if enabled{"All printers resumed."}else{"All printers paused. Queued documents are retained."}.into())
                         }
                         Command::Delete(id)=>{
                             let printer=find(&state,&id)?.clone();ensure!(pending_for(&root,&id)==0,"This printer has captured jobs awaiting delivery. Resume or retry them before deleting it.");
-                            if cfg!(windows) {platform::native_action("remove",&printer,state.capture_port)?;}
+                            if platform::NATIVE_AVAILABLE {platform::native_action("remove",&printer,state.capture_port,&data)?;}
                             let mut next=state.clone();next.printers.retain(|p|p.id!=id);commit(&mut state,&path,next)?;close=true;Ok("Printer removed. Saved PDFs and activity were kept.".into())
                         }
                         Command::Test(id)=>{
                             let p=find(&state,&id)?.clone();ensure!(p.enabled,"Resume this printer before printing a test page.");
-                            if cfg!(windows){ensure!(p.installed,"Install or repair this printer first.");platform::print_test(&p)?;Ok("Test page sent through the Windows print queue. It will appear in Activity when captured.".into())}
+                            if platform::NATIVE_AVAILABLE{ensure!(p.installed,"Install or repair this printer first.");platform::print_test(&p)?;Ok("Test page sent through the system print queue. It will appear in Activity when captured.".into())}
                             else{let mut next=state.clone();let p=find_mut(&mut next,&id)?;let output=test_pdf(p)?;let name=p.name.clone();next.activity.push(Activity{printer:name,file:output.file_name().unwrap_or_default().to_string_lossy().into(),status:"Saved".into(),path:output.to_string_lossy().into(),printer_id:id,job_id:uuid::Uuid::new_v4().to_string(),created_unix:time::OffsetDateTime::now_utc().unix_timestamp(),size_bytes:fs::metadata(&output).map(|m|m.len()).unwrap_or(0)});commit(&mut state,&path,next)?;Ok(format!("Local test PDF saved to {}. System printing requires Windows.",output.display()))}
                         }
                         Command::Settings{dark,theme,folder,tray,notifications,startup,history_days}=>{
@@ -199,7 +199,7 @@ impl Service {
                             let imported:Vec<Printer>=serde_json::from_slice(&fs::read(file)?)?;
                             ensure!(imported.len()<=1000,"Import at most 1,000 profiles at a time.");let mut next=state.clone();
                             for mut p in imported {validate(&next,"",&p.name,&p.folder,&p.pattern)?;p.id=uuid::Uuid::new_v4().to_string();p.installed=false;p.last_error.clear();p.count=0;next.printers.push(p);}
-                            commit(&mut state,&path,next)?;Ok("Profiles imported. Use Install or repair on each imported profile to add it to Windows.".into())
+                            commit(&mut state,&path,next)?;Ok("Profiles imported. Use Install or repair on each imported profile to add it to the system.".into())
                         }
                         Command::Export(file)=>{let bytes=serde_json::to_vec_pretty(&state.printers)?;fs::write(file,bytes)?;Ok("Printer profiles exported.".into())},
                         Command::ClearHistory=>{let mut next=state.clone();next.activity.clear();commit(&mut state,&path,next)?;Ok("Activity cleared. Your PDFs were kept.".into())},
@@ -740,6 +740,11 @@ fn profile_routes(state: &State) -> Result<HashMap<String, String>> {
     }
     Ok(routes)
 }
+struct CaptureHandle {
+    _tcp: Option<vps_core::lpr::CaptureServer>,
+    #[cfg(target_os = "macos")]
+    _unix: Option<vps_core::lpr::UnixCaptureServer>,
+}
 fn start_capture(
     state: &mut State,
     path: &Path,
@@ -747,33 +752,60 @@ fn start_capture(
     routes: Arc<RwLock<HashMap<String, String>>>,
     tx: Sender<Command>,
     pending: Arc<AtomicBool>,
-) -> Result<Option<vps_core::lpr::CaptureServer>> {
-    if !cfg!(windows) {
+) -> Result<Option<CaptureHandle>> {
+    if !platform::NATIVE_AVAILABLE {
         return Ok(None);
     }
-    let server = vps_core::lpr::CaptureServer::start_with_title_resolver(
-        std::net::SocketAddr::from(([127, 0, 0, 1], state.capture_port)),
-        root,
-        routes,
-        Arc::new(platform::authorize_capture),
-        Arc::new(move |event| match event {
-            Ok(_) => {
-                if !pending.swap(true, Ordering::AcqRel) {
-                    let _ = tx.send(Command::Scan);
+    #[cfg(target_os = "macos")]
+    {
+        let server = vps_core::lpr::UnixCaptureServer::start(
+            platform::capture_socket(path.parent().context("State path needs a parent")?)?,
+            root,
+            routes,
+            Arc::new(platform::authorize_unix),
+            Arc::new(move |event| match event {
+                Ok(_) => {
+                    if !pending.swap(true, Ordering::AcqRel) {
+                        let _ = tx.send(Command::Scan);
+                    }
                 }
-            }
-            Err(e) => {
-                let _ = tx.send(Command::CaptureError(format!("PDF capture: {e:#}")));
-            }
-        }),
-        Arc::new(platform::capture_title),
-    )?;
-    if state.capture_port != server.address().port() {
-        let mut next = state.clone();
-        next.capture_port = server.address().port();
-        commit(state, path, next)?;
+                Err(e) => {
+                    let _ = tx.send(Command::CaptureError(format!("PDF capture: {e:#}")));
+                }
+            }),
+        )?;
+        let _ = state;
+        Ok(Some(CaptureHandle {
+            _unix: Some(server),
+            _tcp: None,
+        }))
     }
-    Ok(Some(server))
+    #[cfg(not(target_os = "macos"))]
+    {
+        let server = vps_core::lpr::CaptureServer::start_with_title_resolver(
+            std::net::SocketAddr::from(([127, 0, 0, 1], state.capture_port, &data)),
+            root,
+            routes,
+            Arc::new(platform::authorize_capture),
+            Arc::new(move |event| match event {
+                Ok(_) => {
+                    if !pending.swap(true, Ordering::AcqRel) {
+                        let _ = tx.send(Command::Scan);
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Command::CaptureError(format!("PDF capture: {e:#}")));
+                }
+            }),
+            Arc::new(platform::capture_title),
+        )?;
+        if state.capture_port != server.address().port() {
+            let mut next = state.clone();
+            next.capture_port = server.address().port();
+            commit(state, path, next)?;
+        }
+        Ok(Some(CaptureHandle { _tcp: Some(server) }))
+    }
 }
 
 fn reclaim(capture: &Path, receipt: &Path, log: &Path) {

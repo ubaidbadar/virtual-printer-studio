@@ -29,8 +29,9 @@ fn refresh(ui: &AppWindow, state: &State) {
         .printers
         .iter()
         .filter(|p| {
-            let attention =
-                !p.folder.is_dir() || !p.last_error.is_empty() || (cfg!(windows) && !p.installed);
+            let attention = !p.folder.is_dir()
+                || !p.last_error.is_empty()
+                || (platform::NATIVE_AVAILABLE && !p.installed);
             p.name.to_lowercase().contains(&query)
                 && (filter != 1 || p.enabled)
                 && (filter != 2 || attention)
@@ -74,13 +75,13 @@ fn refresh(ui: &AppWindow, state: &State) {
                 "Folder missing"
             } else if !p.last_error.is_empty() {
                 "Needs attention"
-            } else if cfg!(windows) && !p.installed {
+            } else if platform::NATIVE_AVAILABLE && !p.installed {
                 "Not installed"
             } else if !p.enabled {
                 "Paused"
-            } else if cfg!(windows) && !ui.get_capture_running() {
+            } else if platform::NATIVE_AVAILABLE && !ui.get_capture_running() {
                 "Receiver offline"
-            } else if cfg!(windows) {
+            } else if platform::NATIVE_AVAILABLE {
                 "Ready"
             } else {
                 "Local profile"
@@ -161,7 +162,7 @@ fn refresh(ui: &AppWindow, state: &State) {
                 p.enabled
                     && p.folder.is_dir()
                     && p.last_error.is_empty()
-                    && (!cfg!(windows) || p.installed)
+                    && (!platform::NATIVE_AVAILABLE || p.installed)
             })
             .count()
             .min(i32::MAX as usize) as i32,
@@ -171,7 +172,9 @@ fn refresh(ui: &AppWindow, state: &State) {
             .printers
             .iter()
             .filter(|p| {
-                !p.folder.is_dir() || !p.last_error.is_empty() || (cfg!(windows) && !p.installed)
+                !p.folder.is_dir()
+                    || !p.last_error.is_empty()
+                    || (platform::NATIVE_AVAILABLE && !p.installed)
             })
             .count()
             .min(i32::MAX as usize) as i32,
@@ -219,7 +222,7 @@ fn refresh(ui: &AppWindow, state: &State) {
                 "Needs attention"
             } else if !p.enabled {
                 "Paused"
-            } else if cfg!(windows) && !p.installed {
+            } else if platform::NATIVE_AVAILABLE && !p.installed {
                 "Not installed"
             } else {
                 "Ready"
@@ -312,6 +315,21 @@ fn send(ui: &AppWindow, sender: &Sender<Command>, command: Command) {
     }
 }
 fn main() -> std::process::ExitCode {
+    #[cfg(target_os = "macos")]
+    if std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n == "vps-cups-filter"))
+        .unwrap_or(false)
+    {
+        return match platform::cups_filter() {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("ERROR: {e:#}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
+
     if let Err(error) = run() {
         eprintln!("{error:#}");
         if !std::env::args()
@@ -334,6 +352,10 @@ fn run() -> anyhow::Result<()> {
             .get(index + 1)
             .ok_or_else(|| anyhow::anyhow!("--ui-snapshot needs an output directory"))?;
         return qa::snapshots(std::path::Path::new(output));
+    }
+    #[cfg(target_os = "macos")]
+    if args.iter().any(|a| a == "--macos-printer-action") {
+        return platform::printer_cli(&args);
     }
     let dirs =
         directories::ProjectDirs::from("studio", "VirtualPrinterStudio", "VirtualPrinterStudio")
@@ -361,8 +383,8 @@ fn run() -> anyhow::Result<()> {
     }
     if args.iter().any(|arg| arg == "--serve") {
         anyhow::ensure!(
-            cfg!(windows),
-            "The Windows capture service requires Windows"
+            platform::NATIVE_AVAILABLE,
+            "System capture requires Windows or macOS"
         );
         let selected = args
             .iter()
@@ -403,11 +425,17 @@ fn run() -> anyhow::Result<()> {
         }
     }
     let ui = AppWindow::new()?;
-    if !cfg!(windows) {
+    if cfg!(target_os = "linux") {
         ui.global::<Tokens>()
             .set_font_family("Liberation Sans".into());
     }
-    ui.set_native_available(cfg!(windows));
+    #[cfg(target_os = "macos")]
+    {
+        ui.global::<Tokens>()
+            .set_font_family("Helvetica Neue".into());
+        ui.set_macos(true);
+    }
+    ui.set_native_available(platform::NATIVE_AVAILABLE);
     let Some(_instance) = instance::Instance::acquire(&data, &ui)? else {
         return Ok(());
     };
@@ -667,7 +695,7 @@ fn run() -> anyhow::Result<()> {
                     ui.set_message("Finish the current operation before closing.".into());
                     return slint::CloseRequestResponse::KeepWindowShown;
                 }
-                if cfg!(windows) && ui.get_applied_keep_tray() {
+                if platform::NATIVE_AVAILABLE && ui.get_applied_keep_tray() {
                     let _ = ui.hide();
                     return slint::CloseRequestResponse::KeepWindowShown;
                 }
@@ -817,8 +845,45 @@ fn run() -> anyhow::Result<()> {
         });
         (tray, flyout)
     };
+    #[cfg(target_os = "macos")]
+    let _menu_bar = {
+        let tray = AppTray::new()?;
+        let weak = ui.as_weak();
+        tray.on_popup(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_reopen();
+            }
+        });
+        let weak = ui.as_weak();
+        tray.on_reopen(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_reopen();
+            }
+        });
+        let weak = ui.as_weak();
+        tray.on_retry(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_retry();
+            }
+        });
+        let weak = ui.as_weak();
+        tray.on_settings(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_editor(false);
+                ui.set_page(3);
+                ui.invoke_reopen();
+            }
+        });
+        let weak = ui.as_weak();
+        tray.on_quit(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.invoke_quit();
+            }
+        });
+        tray
+    };
     ui.show()?;
-    if cfg!(windows) && std::env::args().any(|arg| arg == "--background") {
+    if platform::NATIVE_AVAILABLE && std::env::args().any(|arg| arg == "--background") {
         ui.hide()?;
     }
     slint::run_event_loop_until_quit()?;
