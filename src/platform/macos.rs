@@ -292,12 +292,9 @@ pub fn startup(enabled: bool) -> Result<()> {
     let dir = PathBuf::from(home).join("Library/LaunchAgents");
     fs::create_dir_all(&dir)?;
     let file = dir.join("studio.virtualprinterstudio.login.plist");
-    let uid = uid().to_string();
     if file.exists() {
-        let _ = Command::new("/bin/launchctl")
-            .args(["bootout", &format!("gui/{uid}")])
-            .arg(&file)
-            .output();
+        // Removing the next-login definition must not terminate an app that
+        // was itself launched by that LaunchAgent. No KeepAlive is registered.
         fs::remove_file(&file)?;
     }
     if enabled {

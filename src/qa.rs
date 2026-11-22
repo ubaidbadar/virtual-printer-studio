@@ -205,6 +205,17 @@ pub fn snapshots(output: &Path) -> anyhow::Result<()> {
     if let Some(e) = error.borrow_mut().take() {
         return Err(e);
     }
+    let mut viewports = Vec::new();
+    for entry in std::fs::read_dir(output)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|ext| ext == "png") {
+            let reader = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path)?))
+                .read_info()?;
+            let info = reader.info();
+            viewports.push(serde_json::json!({"image":path.file_name().unwrap_or_default().to_string_lossy(),"width":info.width,"height":info.height}));
+        }
+    }
+    viewports.sort_by_key(|item| item["image"].as_str().unwrap_or_default().to_owned());
     std::fs::write(
         output.join("capture.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
@@ -212,7 +223,8 @@ pub fn snapshots(output: &Path) -> anyhow::Result<()> {
             "fixture": "deterministic UI state; no native printer backend",
             "scale_factor": ui.window().scale_factor(),
             "font_family": ui.global::<Tokens>().get_font_family().as_str(),
-            "reference_normalization": "remove title bar (40 pixels) for scenes 01–07 only; no resizing or alignment",
+            "viewports": viewports,
+            "reference_normalization": if cfg!(target_os="macos") { "macOS window-server constrained viewport; actual dimensions recorded; not a Windows reference comparison" } else { "remove title bar (40 pixels) for scenes 01–07 only; no resizing or alignment" },
             "scene_08": "controlled component preview; not a native Windows notification or desktop capture",
             "scene_09": "brand component preview using the shipped SVG icon assets"
         }))?,
@@ -300,7 +312,7 @@ fn scene(
                 (1280.0 * scale).round() as u32,
                 (height * scale).round() as u32,
             );
-            if (buffer.width(), buffer.height()) != expected {
+            if (buffer.width(), buffer.height()) != expected && !cfg!(target_os = "macos") {
                 anyhow::ensure!(
                     resize_attempt < 5,
                     "Native window did not reach requested client size: {:?}, expected {:?}",
