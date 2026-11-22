@@ -1,0 +1,38 @@
+name: Verify Mac package desktop launch
+on:
+  workflow_dispatch:
+    inputs:
+      package_run_id:
+        description: Successful Apple Silicon build workflow run ID
+        required: true
+permissions:
+  actions: read
+  contents: read
+jobs:
+  gui:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.package_run_id }}
+          name: VirtualPrinterStudio-AppleSilicon
+          path: target/
+      - name: Extract and verify exact downloadable application
+        run: |
+          mkdir -p target/macos-package
+          ditto -x -k target/VirtualPrinterStudio-AppleSilicon.zip target/macos-package
+          codesign --verify --deep --strict 'target/macos-package/Virtual Printer Studio.app'
+      - name: Launch actual desktop app and check its visible window
+        run: python3 scripts/qa/macos-gui-smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-desktop-${{ matrix.os }}
+          path: target/macos-gui-evidence/
