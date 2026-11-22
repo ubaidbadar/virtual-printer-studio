@@ -319,6 +319,86 @@ fn receive<S: Read + Write>(
     }
     result
 }
+#[cfg(unix)]
+pub type UnixAuthorize = Arc<dyn Fn(&std::os::unix::net::UnixStream) -> Result<()> + Send + Sync>;
+
+/// macOS CUPS filters use a local Unix socket with kernel peer credentials.
+/// The same durable byte-counted receiver is shared with Windows.
+#[cfg(unix)]
+pub struct UnixCaptureServer {
+    path: PathBuf,
+    stop: Arc<AtomicBool>,
+    join: Option<thread::JoinHandle<()>>,
+}
+#[cfg(unix)]
+impl UnixCaptureServer {
+    pub fn start(
+        path: PathBuf,
+        root: PathBuf,
+        profiles: Arc<RwLock<HashMap<String, String>>>,
+        authorize: UnixAuthorize,
+        event: Event,
+    ) -> Result<Self> {
+        use std::os::unix::{
+            fs::{FileTypeExt, PermissionsExt},
+            net::{UnixListener, UnixStream},
+        };
+        if let Ok(meta) = fs::symlink_metadata(&path) {
+            ensure!(
+                meta.file_type().is_socket(),
+                "Capture socket path is occupied by another file"
+            );
+            ensure!(
+                UnixStream::connect(&path).is_err(),
+                "The PDF receiver is already running"
+            );
+            fs::remove_file(&path)?;
+        }
+        let listener = UnixListener::bind(&path)?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o666))?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let child_stop = stop.clone();
+        let join = thread::spawn(move || {
+            // Serialize CUPS transfers to bound memory/thread use. CUPS retains
+            // jobs until the durable receive ACK has been sent.
+            for stream in listener.incoming() {
+                if child_stop.load(Ordering::Acquire) {
+                    break;
+                }
+                let result = (|| {
+                    let stream = stream?;
+                    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
+                    stream.set_write_timeout(Some(Duration::from_secs(120)))?;
+                    authorize(&stream)?;
+                    let title_resolver: TitleResolver = Arc::new(|_| Ok(None));
+                    receive(stream, &root, &profiles, &title_resolver)
+                })();
+                match result {
+                    Ok(Some(job)) => event(Ok(job)),
+                    Ok(None) => (),
+                    Err(error) => event(Err(error)),
+                }
+            }
+        });
+        Ok(Self {
+            path,
+            stop,
+            join: Some(join),
+        })
+    }
+}
+#[cfg(unix)]
+impl Drop for UnixCaptureServer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = std::os::unix::net::UnixStream::connect(&self.path);
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,13 +408,16 @@ mod tests {
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .expect("timeout");
-        let read_ack = |stream: &mut TcpStream| {
+        send_over(&mut stream, data_first);
+    }
+    fn send_over<S: Read + Write>(stream: &mut S, data_first: bool) {
+        let read_ack = |stream: &mut S| {
             let mut ack = [1];
             stream.read_exact(&mut ack).expect("ACK");
             assert_eq!(ack, [0]);
         };
         stream.write_all(b"\x02profile1\n").expect("request");
-        read_ack(&mut stream);
+        read_ack(stream);
         let control = b"Hlocalhost\nPowner\nJInvoice from Word\nNInvoice.pdf\n";
         let pdf = b"%PDF-1.4\nexample\n%%EOF\n";
         let parts: Vec<(u8, &[u8], &str)> = if data_first {
@@ -346,11 +429,67 @@ mod tests {
             stream
                 .write_all(format!("{}{} {name}\n", code as char, data.len()).as_bytes())
                 .expect("command");
-            read_ack(&mut stream);
+            read_ack(stream);
             stream.write_all(data).expect("data");
             stream.write_all(&[0]).expect("terminator");
-            read_ack(&mut stream);
+            read_ack(stream);
         }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn unix_capture_is_durable_deduplicates_and_preserves_other_files() {
+        use std::os::unix::net::UnixStream;
+        let dir = tempfile::tempdir().expect("folder");
+        let socket = dir.path().join("capture.sock");
+        let profiles = Arc::new(RwLock::new(HashMap::from([(
+            "profile1".into(),
+            "profile1".into(),
+        )])));
+        let (tx, rx) = mpsc::channel();
+        let event: Event = Arc::new(move |event| {
+            let _ = tx.send(event);
+        });
+        fs::write(&socket, b"keep this file").expect("occupied socket");
+        assert!(
+            UnixCaptureServer::start(
+                socket.clone(),
+                dir.path().join("inbox"),
+                profiles.clone(),
+                Arc::new(|_| Ok(())),
+                event.clone()
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&socket).expect("original"), b"keep this file");
+        fs::remove_file(&socket).expect("cleanup fixture");
+        let server = UnixCaptureServer::start(
+            socket.clone(),
+            dir.path().join("inbox"),
+            profiles,
+            Arc::new(|_| Ok(())),
+            event,
+        )
+        .expect("Unix server");
+        for order in [true, false] {
+            let mut stream = UnixStream::connect(&socket).expect("connect");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("timeout");
+            send_over(&mut stream, order);
+        }
+        let job = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("event")
+            .expect("captured");
+        assert_eq!(job.title, "Invoice from Word");
+        assert_eq!(
+            fs::read_dir(dir.path().join("inbox/jobs/profile1"))
+                .expect("jobs")
+                .count(),
+            1
+        );
+        drop(server);
+        assert!(!socket.exists());
     }
     #[test]
     fn framing_job_names_and_transport_retry_are_correct() {
@@ -598,85 +737,5 @@ mod tests {
             )
             .is_err()
         );
-    }
-}
-
-#[cfg(unix)]
-pub type UnixAuthorize = Arc<dyn Fn(&std::os::unix::net::UnixStream) -> Result<()> + Send + Sync>;
-
-/// macOS CUPS filters use a local Unix socket with kernel peer credentials.
-/// The same durable byte-counted receiver is shared with Windows.
-#[cfg(unix)]
-pub struct UnixCaptureServer {
-    path: PathBuf,
-    stop: Arc<AtomicBool>,
-    join: Option<thread::JoinHandle<()>>,
-}
-#[cfg(unix)]
-impl UnixCaptureServer {
-    pub fn start(
-        path: PathBuf,
-        root: PathBuf,
-        profiles: Arc<RwLock<HashMap<String, String>>>,
-        authorize: UnixAuthorize,
-        event: Event,
-    ) -> Result<Self> {
-        use std::os::unix::{
-            fs::{FileTypeExt, PermissionsExt},
-            net::{UnixListener, UnixStream},
-        };
-        if let Ok(meta) = fs::symlink_metadata(&path) {
-            ensure!(
-                meta.file_type().is_socket(),
-                "Capture socket path is occupied by another file"
-            );
-            ensure!(
-                UnixStream::connect(&path).is_err(),
-                "The PDF receiver is already running"
-            );
-            fs::remove_file(&path)?;
-        }
-        let listener = UnixListener::bind(&path)?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o666))?;
-        let stop = Arc::new(AtomicBool::new(false));
-        let child_stop = stop.clone();
-        let join = thread::spawn(move || {
-            // Serialize CUPS transfers to bound memory/thread use. CUPS retains
-            // jobs until the durable receive ACK has been sent.
-            for stream in listener.incoming() {
-                if child_stop.load(Ordering::Acquire) {
-                    break;
-                }
-                let result = (|| {
-                    let stream = stream?;
-                    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
-                    stream.set_write_timeout(Some(Duration::from_secs(120)))?;
-                    authorize(&stream)?;
-                    let title_resolver: TitleResolver = Arc::new(|_| Ok(None));
-                    receive(stream, &root, &profiles, &title_resolver)
-                })();
-                match result {
-                    Ok(Some(job)) => event(Ok(job)),
-                    Ok(None) => (),
-                    Err(error) => event(Err(error)),
-                }
-            }
-        });
-        Ok(Self {
-            path,
-            stop,
-            join: Some(join),
-        })
-    }
-}
-#[cfg(unix)]
-impl Drop for UnixCaptureServer {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        let _ = std::os::unix::net::UnixStream::connect(&self.path);
-        if let Some(join) = self.join.take() {
-            let _ = join.join();
-        }
-        let _ = fs::remove_file(&self.path);
     }
 }

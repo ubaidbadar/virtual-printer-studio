@@ -2,7 +2,7 @@
 
 A Rust / Slint desktop app for Windows 10/11 and Apple Silicon macOS. Create named virtual printers, print from other applications, and automatically save each document as a PDF in its configured folder.
 
-Version 0.2 uses **Microsoft Print to PDF** with Windows' built-in **Standard TCP/IP port monitor in LPR mode**. All capture traffic stays on `127.0.0.1`. No custom driver, port-monitor DLL, Ghostscript, or third-party rendering service is installed.
+On Windows, version 0.2 uses **Microsoft Print to PDF** with Windows' built-in **Standard TCP/IP port monitor in LPR mode**. All capture traffic stays on `127.0.0.1`. No custom driver, port-monitor DLL, Ghostscript, or third-party rendering service is installed.
 
 ## Install on Apple Silicon macOS
 
@@ -60,7 +60,7 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-Linux development requires fontconfig development libraries and X11/Wayland with an XDG file-dialog portal. Linux supports profiles, local test PDFs and inbox delivery; native printer installation is Windows-only.
+Linux development requires fontconfig development libraries and X11/Wayland with an XDG file-dialog portal. Linux supports profiles, local test PDFs and inbox delivery; native printer installation supports Windows and macOS.
 
 The Windows integration test creates a temporary real printer and exercises normal printing, authenticated capture, multiple PDFs, job titles, pause/resume, printing while the app is stopped, missing-folder recovery, replay prevention and native cleanup:
 
@@ -82,7 +82,7 @@ virtual-printer-studio.exe --serve --state C:\path\state.json
 ## Code layout
 
 - `crates/core`: domain, persistence, safe naming, PDF delivery, RFC 1179 receiver and portable tests.
-- `src/platform`: Windows provisioning, connection authentication, notifications, startup and appearance.
+- `src/platform`: Windows and macOS provisioning, connection authentication, notifications, startup and appearance.
 - `src/service.rs`: serialized background worker and event-driven delivery; no inbox polling.
 - `src/main.rs`: composition, single-instance handling and asynchronous UI callbacks.
 - `ui/`: Fluent pages, conditional dialogs, theme tokens and virtualized printer rows.

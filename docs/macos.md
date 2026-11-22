@@ -25,3 +25,5 @@ To remove a printer, delete it inside the app after delivering or cancelling pen
 The Apple Silicon macOS workflow runs formatting, portable tests, Clippy, native release compilation, bundle signature/architecture checks, CUPS integration, and all nine UI captures. `scripts/qa/macos-smoke.py` creates only temporary printers and synthetic documents and records which native printing/recovery checks completed. Its evidence is separate from the downloadable package.
 
 A successful build is not a claim of pixel-perfect macOS UI or live Restora testing on a Mac. The Windows package remains separate.
+
+Implementation references: [Apple CUPS filter interface](https://apple.github.io/cups/doc/man-filter.html), [PPD filter declarations](https://www.cups.org/doc/spec-ppd.html), and [CUPS file-device policy](https://apple.github.io/cups/doc/man-cups-files.conf.html). The `file:///dev/null` sink is explicitly allowed by CUPS; the custom PDF filter publishes the document to the authenticated receiver before that sink completes.
